@@ -47,6 +47,7 @@ export interface Product {
   rentalPrice: number; // Per day
   securityDeposit: number;
   vendorName: string;
+  vendorUserId?: string | null; // owner; null for seeded archive stock
   vendorVerified: "Verified Vendor" | "Trusted Vendor" | "Standard";
   rating: number;
   reviewsCount: number;

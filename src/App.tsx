@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import Navbar from "./components/Navbar";
 import CustomerHome from "./components/CustomerHome";
 import BrowseProducts from "./components/BrowseProducts";
@@ -14,177 +14,184 @@ import VendorDashboard from "./components/VendorDashboard";
 import AdminDashboard from "./components/AdminDashboard";
 import WelcomeLogin from "./components/WelcomeLogin";
 
-import { INITIAL_PRODUCTS, INITIAL_USER, INITIAL_NOTIFICATIONS } from "./data";
-import { Product, CartItem, Order, Coupon, Notification, Address, UserRole } from "./types";
-
-const INITIAL_ORDERS: Order[] = [
-  {
-    id: "ord-829103",
-    items: [
-      {
-        id: "cart-init-1",
-        product: INITIAL_PRODUCTS[1], // Textured Bouclé Blazer
-        selectedSize: "M",
-        selectedColor: "Oatmeal Beige",
-        rentalDuration: 4,
-        startDate: "2026-07-10",
-        securityDeposit: INITIAL_PRODUCTS[1].securityDeposit,
-        totalPrice: INITIAL_PRODUCTS[1].rentalPrice * 4
-      }
-    ],
-    totalAmount: (INITIAL_PRODUCTS[1].rentalPrice * 4) + INITIAL_PRODUCTS[1].securityDeposit,
-    status: "Currently Rented",
-    date: "2026-07-10",
-    deliveryAddress: INITIAL_USER.addresses[0],
-    paymentMethod: "Razorpay (Online)",
-    returnStatus: "Pending"
-  }
-];
+import { api, ApiError, clearToken, getToken } from "./api/client";
+import { Product, CartItem, Order, Coupon, Notification, Address, UserRole, UserProfileData } from "./types";
 
 export default function App() {
+  const [booting, setBooting] = useState<boolean>(true);
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
   const [currentRole, setCurrentRole] = useState<UserRole>("customer");
   const [activeView, setActiveView] = useState<string>("home");
-  const [products, setProducts] = useState<Product[]>(INITIAL_PRODUCTS);
-  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
-  
-  // Basket & Lists state
-  const [cartItems, setCartItems] = useState<CartItem[]>([]);
-  const [wishlistIds, setWishlistIds] = useState<string[]>(["prod-1", "prod-4"]);
-  const [orders, setOrders] = useState<Order[]>(INITIAL_ORDERS);
-  const [notifications, setNotifications] = useState<Notification[]>(INITIAL_NOTIFICATIONS);
-  const [userProfile, setUserProfile] = useState<any>({
-    ...INITIAL_USER,
-    avatar: INITIAL_USER.profilePic // Ensure avatar mapping exists
-  });
 
-  // Coupon & Search states
+  const [products, setProducts] = useState<Product[]>([]);
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const [cartItems, setCartItems] = useState<CartItem[]>([]);
+  const [wishlistIds, setWishlistIds] = useState<string[]>([]);
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [userProfile, setUserProfile] = useState<UserProfileData | null>(null);
+
   const [appliedCoupon, setAppliedCoupon] = useState<Coupon | null>(null);
   const [discountAmount, setDiscountAmount] = useState<number>(0);
   const [searchQuery, setSearchQuery] = useState<string>("");
+  const [banner, setBanner] = useState<string | null>(null);
 
-  // Lists count computed values
+  const notify = useCallback((message: string) => {
+    setBanner(message);
+    window.setTimeout(() => setBanner(null), 5000);
+  }, []);
+
+  /** Pull everything this user can see. Called on login and after checkout. */
+  const loadUserData = useCallback(async (role: UserRole) => {
+    const [productList, orderList] = await Promise.all([
+      api.listProducts(),
+      api.listOrders().catch(() => [] as Order[]),
+    ]);
+    setProducts(productList);
+    setOrders(orderList);
+
+    // Customers alone have a bag, a wishlist, and a bell.
+    if (role === "customer") {
+      const [cart, wishlist, notifs] = await Promise.all([
+        api.getCart().catch(() => [] as CartItem[]),
+        api.getWishlist().catch(() => [] as string[]),
+        api.listNotifications().catch(() => [] as Notification[]),
+      ]);
+      setCartItems(cart);
+      setWishlistIds(wishlist);
+      setNotifications(notifs);
+    }
+  }, []);
+
+  // Restore the session on refresh. A stored token that the backend rejects
+  // is dropped rather than leaving the app half-authenticated.
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      if (!getToken()) {
+        setBooting(false);
+        return;
+      }
+      try {
+        const profile = await api.getProfile();
+        if (cancelled) return;
+        setUserProfile(profile);
+        setCurrentRole(profile.role);
+        setIsLoggedIn(true);
+        await loadUserData(profile.role);
+      } catch (err) {
+        clearToken();
+        if (err instanceof ApiError && err.status === 0) {
+          notify("Cannot reach the StyleSwap server. Start it with: cd backend && python run_all.py");
+        }
+      } finally {
+        if (!cancelled) setBooting(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [loadUserData, notify]);
+
   const cartCount = useMemo(() => cartItems.length, [cartItems]);
   const wishlistCount = useMemo(() => wishlistIds.length, [wishlistIds]);
+  const wishlistProducts = useMemo(
+    () => products.filter((p) => wishlistIds.includes(p.id)),
+    [products, wishlistIds]
+  );
 
-  const wishlistProducts = useMemo(() => {
-    return products.filter((p) => wishlistIds.includes(p.id));
-  }, [products, wishlistIds]);
+  const handleLogin = async (user: UserProfileData) => {
+    setUserProfile(user);
+    setCurrentRole(user.role);
+    setIsLoggedIn(true);
+    setActiveView("home");
+    try {
+      await loadUserData(user.role);
+    } catch {
+      notify("Signed in, but some data could not be loaded.");
+    }
+  };
 
-  // Handle addition of items into the bag
-  const handleAddToCart = (product: Product, size: string, color: string, duration: number) => {
-    const isExisting = cartItems.find(
-      (item) => item.product.id === product.id && item.selectedSize === size && item.selectedColor === color
-    );
+  const handleLogout = () => {
+    clearToken();
+    setIsLoggedIn(false);
+    setUserProfile(null);
+    setProducts([]);
+    setCartItems([]);
+    setWishlistIds([]);
+    setOrders([]);
+    setNotifications([]);
+    setActiveView("home");
+  };
 
-    if (isExisting) {
-      setCartItems((prev) =>
-        prev.map((item) =>
-          item.id === isExisting.id
-            ? {
-                ...item,
-                rentalDuration: item.rentalDuration + duration,
-                totalPrice: item.totalPrice + (product.rentalPrice * duration),
-              }
-            : item
-        )
-      );
-    } else {
-      const newItem: CartItem = {
-        id: "cart-" + Date.now() + Math.random().toString(36).substring(2, 7),
-        product,
+  const handleAddToCart = async (product: Product, size: string, color: string, duration: number) => {
+    try {
+      // The server prices the line and returns the whole bag, so local state
+      // is replaced rather than patched — no chance of drift.
+      const cart = await api.addToCart({
+        productId: product.id,
         selectedSize: size,
         selectedColor: color,
         rentalDuration: duration,
-        startDate: new Date().toISOString().split("T")[0],
-        securityDeposit: product.securityDeposit,
-        totalPrice: product.rentalPrice * duration,
-      };
-      setCartItems((prev) => [...prev, newItem]);
+      });
+      setCartItems(cart);
+      notify(`${product.name} added to your bag.`);
+      setNotifications(await api.listNotifications().catch(() => notifications));
+    } catch (err) {
+      notify(err instanceof ApiError ? err.message : "Could not add that item to your bag.");
     }
-
-    // Spawn high-polish confirmation notice
-    const newNotif: Notification = {
-      id: "not-" + Date.now(),
-      title: "Item Added to Bag",
-      message: `${product.name} (Size: ${size}, Color: ${color}) added to your rental workspace.`,
-      type: "promo",
-      date: "Just now",
-      read: false,
-    };
-    setNotifications((prev) => [newNotif, ...prev]);
   };
 
-  // Helper routine to bulk add look to cart
-  const handleAddLookToCart = (
-    lookItems: { name: string; brand: string; price: number; type: string; description: string }[],
-    totalPrice: number
+  /** Add an AI-generated look. Only pieces that exist in the catalog can be
+   *  rented, so unmatched suggestions are reported rather than invented. */
+  const handleAddLookToCart = async (
+    lookItems: { name: string; brand: string; price: number; type: string; description: string }[]
   ) => {
-    lookItems.forEach((item) => {
-      let foundProduct = products.find(
+    const matched: Product[] = [];
+    const missing: string[] = [];
+
+    for (const item of lookItems) {
+      const found = products.find(
         (p) =>
           p.name.toLowerCase().includes(item.name.toLowerCase()) ||
-          p.brand.toLowerCase().includes(item.brand.toLowerCase())
+          item.name.toLowerCase().includes(p.name.toLowerCase()) ||
+          p.brand.toLowerCase() === item.brand.toLowerCase()
       );
+      if (found) matched.push(found);
+      else missing.push(item.name);
+    }
 
-      if (!foundProduct) {
-        foundProduct = {
-          id: "prod-temp-" + Date.now() + Math.floor(Math.random() * 1000),
-          name: item.name,
-          brand: item.brand,
-          category: (item.type === "dress"
-            ? "Women"
-            : item.type === "shoes"
-            ? "Shoes"
-            : item.type === "handbag"
-            ? "Handbags"
-            : "Jewellery") as any,
-          subCategory: "AI Stylist Curation",
-          description: item.description,
-          image:
-            item.type === "dress"
-              ? "https://images.unsplash.com/photo-1594552072238-b8a33785b261?auto=format&fit=crop&q=80&w=600"
-              : item.type === "shoes"
-              ? "https://images.unsplash.com/photo-1520639888713-7851133b1ed0?auto=format&fit=crop&q=80&w=600"
-              : item.type === "handbag"
-              ? "https://images.unsplash.com/photo-1584917865442-de89df76afd3?auto=format&fit=crop&q=80&w=600"
-              : "https://images.unsplash.com/photo-1535632066927-ab7c9ab60908?auto=format&fit=crop&q=80&w=600",
-          gallery: [],
-          sizes: ["S", "M", "L", "One Size"],
-          colors: [{ name: "Curated Neutral", hex: "#D3C6B8" }],
-          rentalPrice: item.price,
-          securityDeposit: Math.ceil(item.price * 4),
-          vendorName: "Aura Premium Archives",
-          vendorVerified: "Verified Vendor",
-          rating: 4.9,
-          reviewsCount: 1,
-          status: "Available",
-          deliveryDate: "Tomorrow",
-          reviews: [],
-        };
-      }
+    for (const product of matched) {
+      await handleAddToCart(product, product.sizes[0] || "M", product.colors[0]?.name || "Neutral", 4);
+    }
 
-      handleAddToCart(
-        foundProduct,
-        foundProduct.sizes[0] || "M",
-        foundProduct.colors[0]?.name || "Curated Neutral",
-        4
-      );
-    });
-
+    if (matched.length === 0) {
+      notify("None of these pieces are in the archive yet — nothing was added.");
+      return;
+    }
+    if (missing.length > 0) {
+      notify(`Added ${matched.length} piece(s). Not in the archive: ${missing.join(", ")}.`);
+    }
     setActiveView("cart");
   };
 
-  const handleUpdateDuration = (id: string, days: number) => {
-    setCartItems((prev) =>
-      prev.map((item) =>
-        item.id === id ? { ...item, rentalDuration: days, totalPrice: item.product.rentalPrice * days } : item
-      )
-    );
+  const handleUpdateDuration = async (id: string, days: number) => {
+    try {
+      setCartItems(await api.updateCartItem(id, days));
+    } catch (err) {
+      notify(err instanceof ApiError ? err.message : "Could not update the rental length.");
+    }
   };
 
-  const handleRemoveItem = (id: string) => {
-    setCartItems((prev) => prev.filter((item) => item.id !== id));
+  const handleRemoveItem = async (id: string) => {
+    try {
+      await api.removeCartItem(id);
+      setCartItems(await api.getCart());
+    } catch (err) {
+      notify(err instanceof ApiError ? err.message : "Could not remove that item.");
+    }
   };
 
   const handleCheckout = (coupon: Coupon | null, discount: number) => {
@@ -193,134 +200,137 @@ export default function App() {
     setActiveView("checkout");
   };
 
-  const handlePlaceOrder = (address: Address, paymentMethod: string) => {
-    const rentalTotal = cartItems.reduce((acc, item) => acc + item.product.rentalPrice * item.rentalDuration, 0);
-    const securityDepositTotal = cartItems.reduce((acc, item) => acc + item.product.securityDeposit, 0);
-    const grandTotal = rentalTotal + securityDepositTotal - discountAmount;
-
-    const newOrder: Order = {
-      id: "ord-" + Math.floor(100000 + Math.random() * 900000),
-      items: [...cartItems],
-      totalAmount: grandTotal,
-      status: "Booked",
-      date: new Date().toISOString().split("T")[0],
-      deliveryAddress: address,
-      paymentMethod: paymentMethod as any,
-      returnStatus: "Pending",
-    };
-
-    setOrders((prev) => [newOrder, ...prev]);
-    setCartItems([]);
-    setAppliedCoupon(null);
-    setDiscountAmount(0);
-
-    const confirmationNotif: Notification = {
-      id: "not-" + Date.now(),
-      title: "Order Placed Successfully",
-      message: `Your rental transaction for ${cartItems.map((i) => i.product.name).join(", ")} has been completed.`,
-      type: "delivery",
-      date: "Just now",
-      read: false,
-    };
-    setNotifications((prev) => [confirmationNotif, ...prev]);
-    setActiveView("orders");
+  const handlePlaceOrder = async (address: Address, paymentMethod: string) => {
+    try {
+      // Only ids go up. The server reads the cart, reprices it, revalidates
+      // the coupon, and computes the total itself.
+      await api.placeOrder({
+        deliveryAddressId: address.id,
+        paymentMethod,
+        couponCode: appliedCoupon?.code,
+      });
+      const [freshOrders, freshCart, freshNotifs] = await Promise.all([
+        api.listOrders(),
+        api.getCart(),
+        api.listNotifications().catch(() => notifications),
+      ]);
+      setOrders(freshOrders);
+      setCartItems(freshCart);
+      setNotifications(freshNotifs);
+      setAppliedCoupon(null);
+      setDiscountAmount(0);
+      setActiveView("orders");
+      notify("Order placed successfully.");
+    } catch (err) {
+      notify(err instanceof ApiError ? err.message : "Could not place your order.");
+    }
   };
 
-  const handleToggleWishlist = (product: Product) => {
+  const handleToggleWishlist = async (product: Product) => {
+    const previous = wishlistIds;
+    // Optimistic: the heart should respond instantly. Rolled back on failure.
     setWishlistIds((prev) =>
       prev.includes(product.id) ? prev.filter((id) => id !== product.id) : [...prev, product.id]
     );
+    try {
+      const { productIds } = await api.toggleWishlist(product.id);
+      setWishlistIds(productIds);
+    } catch (err) {
+      setWishlistIds(previous);
+      notify(err instanceof ApiError ? err.message : "Could not update your wishlist.");
+    }
   };
 
-  const handleMarkNotificationRead = (id: string) => {
+  const handleMarkNotificationRead = async (id: string) => {
     setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)));
+    try {
+      await api.markNotificationRead(id);
+    } catch {
+      /* Cosmetic only — a failed read-receipt isn't worth interrupting the user. */
+    }
   };
 
-  const handleUpdateProfile = (updated: any) => {
-    setUserProfile(updated);
+  const handleUpdateProfile = async (updated: Partial<UserProfileData>) => {
+    try {
+      setUserProfile(
+        await api.updateProfile({
+          name: updated.name,
+          phone: updated.phone,
+          profilePic: updated.profilePic,
+        })
+      );
+      notify("Profile updated.");
+    } catch (err) {
+      notify(err instanceof ApiError ? err.message : "Could not update your profile.");
+    }
   };
 
   const handleSearch = (query: string) => {
     setSearchQuery(query);
+    setActiveView("browse");
   };
 
-  // Automated return scan trigger calling backend API proxy
-  const handleTriggerReturnScan = async (orderId: string, itemId: string, damagePreset: string) => {
+  const handleTriggerReturnScan = async (orderId: string, _itemId: string, damagePreset: string) => {
+    // The fee comes back from the server; the client never proposes one.
+    const result = await api.returnScan(orderId, damagePreset);
+    setOrders(await api.listOrders());
+    setNotifications(await api.listNotifications().catch(() => notifications));
+    return result;
+  };
+
+  const handleAddListing = async (newProduct: Product) => {
     try {
-      const res = await fetch("/api/damage-detection", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ damagePreset }),
+      await api.createProduct({
+        name: newProduct.name,
+        category: newProduct.category,
+        subCategory: newProduct.subCategory,
+        brand: newProduct.brand,
+        description: newProduct.description,
+        image: newProduct.image,
+        gallery: newProduct.gallery,
+        sizes: newProduct.sizes,
+        colors: newProduct.colors,
+        rentalPrice: newProduct.rentalPrice,
+        securityDeposit: newProduct.securityDeposit,
+        vendorName: newProduct.vendorName,
+        badge: newProduct.badge,
       });
-
-      if (!res.ok) throw new Error("Damage API error");
-      const scanResult = await res.json();
-
-      setOrders((prev) =>
-        prev.map((o) => {
-          if (o.id !== orderId) return o;
-          return {
-            ...o,
-            status: damagePreset === "perfect" ? "Returned" : "Under Maintenance",
-            returnStatus: "Under Inspection",
-            damageReport: {
-              severity: damagePreset === "perfect" ? "None" : damagePreset === "stain" ? "Minor" : "Major",
-              description: scanResult.damageSummary,
-              charge: scanResult.feeCharged,
-            },
-          };
-        })
-      );
-
-      // Trigger automatic warning notification if damage exists
-      if (damagePreset !== "perfect") {
-        const warningNotif: Notification = {
-          id: "not-warn-" + Date.now(),
-          title: "Damage Inspection Flagged",
-          message: `Drape integrity scan returned warning: ${scanResult.damageSummary}. A recovery fee of ₹${scanResult.feeCharged} was noted.`,
-          type: "return",
-          date: "Just now",
-          read: false,
-        };
-        setNotifications((prev) => [warningNotif, ...prev]);
-      } else {
-        const cleanNotif: Notification = {
-          id: "not-clean-" + Date.now(),
-          title: "Garment Return Logged",
-          message: "Excellent! Your returned item passed integrity clearance logs in perfect condition.",
-          type: "return",
-          date: "Just now",
-          read: false,
-        };
-        setNotifications((prev) => [cleanNotif, ...prev]);
-      }
-
-      return scanResult;
+      setProducts(await api.listProducts());
+      notify(`${newProduct.name} is now listed.`);
     } catch (err) {
-      console.error(err);
-      throw err;
+      notify(err instanceof ApiError ? err.message : "Could not create that listing.");
     }
   };
 
-  // Vendor Portal Handlers
-  const handleAddListing = (newProduct: Product) => {
-    setProducts((prev) => [newProduct, ...prev]);
+  const handleUpdateProductPrice = async (id: string, newPrice: number) => {
+    try {
+      await api.updateProduct(id, { rentalPrice: newPrice });
+      setProducts(await api.listProducts());
+    } catch (err) {
+      notify(err instanceof ApiError ? err.message : "Could not update the price.");
+    }
   };
 
-  const handleUpdateProductPrice = (id: string, newPrice: number) => {
-    setProducts((prev) => prev.map((p) => (p.id === id ? { ...p, rentalPrice: newPrice } : p)));
+  const handleUpdateOrderStatus = async (orderId: string, status: string) => {
+    try {
+      await api.updateOrderStatus(orderId, status);
+      setOrders(await api.listOrders());
+    } catch (err) {
+      notify(err instanceof ApiError ? err.message : "Could not update the order status.");
+    }
   };
 
-  const handleUpdateOrderStatus = (orderId: string, status: string) => {
-    setOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, status: status as any } : o)));
-  };
-
-  const handleProductClick = (product: Product) => {
+  const handleProductClick = async (product: Product) => {
     setSelectedProduct(product);
     setActiveView("product-details");
+    try {
+      // Refetch for the full review list, which the list endpoint trims.
+      setSelectedProduct(await api.getProduct(product.id));
+    } catch {
+      /* Keep the list version — it renders fine without the extra reviews. */
+    }
   };
 
-  // Rendering Routing Core logic
   const renderView = () => {
     if (currentRole === "vendor") {
       return (
@@ -330,6 +340,7 @@ export default function App() {
           onUpdateProductPrice={handleUpdateProductPrice}
           incomingOrders={orders}
           onUpdateOrderStatus={handleUpdateOrderStatus}
+          vendorUserId={userProfile?.id}
         />
       );
     }
@@ -436,23 +447,19 @@ export default function App() {
     }
   };
 
-  if (!isLoggedIn) {
+  if (booting) {
     return (
-      <WelcomeLogin
-        onLogin={(user, role) => {
-          setUserProfile(user);
-          setCurrentRole(role);
-          setIsLoggedIn(true);
-          if (role === "customer") {
-            setActiveView("home");
-          } else if (role === "vendor") {
-            setActiveView("vendor-dashboard");
-          } else {
-            setActiveView("admin-dashboard");
-          }
-        }}
-      />
+      <div className="min-h-screen bg-[#F8F6F2] flex items-center justify-center">
+        <div className="text-center space-y-3">
+          <div className="w-8 h-8 border-2 border-[#DADADA] border-t-[#1C1C1C] rounded-full animate-spin mx-auto" />
+          <p className="font-serif text-lg text-[#1C1C1C]">StyleSwap</p>
+        </div>
+      </div>
     );
+  }
+
+  if (!isLoggedIn || !userProfile) {
+    return <WelcomeLogin onLogin={handleLogin} />;
   }
 
   return (
@@ -468,12 +475,16 @@ export default function App() {
         onMarkNotificationRead={handleMarkNotificationRead}
         userProfile={userProfile}
         onSearch={handleSearch}
-        onLogout={() => setIsLoggedIn(false)}
+        onLogout={handleLogout}
       />
-      
-      <main className="w-full">
-        {renderView()}
-      </main>
+
+      {banner && (
+        <div className="fixed top-24 right-6 z-50 max-w-sm bg-[#1C1C1C] text-white text-xs font-sans px-5 py-4 rounded-2xl shadow-lg animate-fadeIn">
+          {banner}
+        </div>
+      )}
+
+      <main className="w-full">{renderView()}</main>
     </div>
   );
 }

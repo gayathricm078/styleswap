@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { PlusCircle, ShoppingBag, ClipboardList, TrendingUp, Star, DollarSign, Check, X, ShieldAlert } from "lucide-react";
 import { Product } from "../types";
+import { api, ApiError } from "../api/client";
 
 interface VendorDashboardProps {
   products: Product[];
@@ -8,6 +9,7 @@ interface VendorDashboardProps {
   onUpdateProductPrice: (id: string, newPrice: number) => void;
   incomingOrders: any[];
   onUpdateOrderStatus: (orderId: string, status: string) => void;
+  vendorUserId?: string;
 }
 
 export default function VendorDashboard({
@@ -16,6 +18,7 @@ export default function VendorDashboard({
   onUpdateProductPrice,
   incomingOrders,
   onUpdateOrderStatus,
+  vendorUserId,
 }: VendorDashboardProps) {
   // Add item form state
   const [name, setName] = useState("");
@@ -37,31 +40,28 @@ export default function VendorDashboard({
     setIsGeneratingImage(true);
     setGenerateImageError("");
     try {
-      const res = await fetch("/api/generate-image", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          prompt: `A pristine high-fashion catalog flat-lay or model studio photo of a ${name} by ${brand} in ${colors} color, minimalist editorial styling`,
-          aspectRatio: "3:4"
-        })
-      });
-      if (!res.ok) throw new Error("Atelier image pipeline failed.");
-      const data = await res.json();
+      const data = await api.generateImage(
+        `A pristine high-fashion catalog flat-lay or model studio photo of a ${name} by ${brand} in ${colors} color, minimalist editorial styling`,
+        "3:4"
+      );
       setImageUrl(data.imageUrl);
-      if (data.isFallback) {
-        setGenerateImageError("Using sandbox visual fallback.");
-      }
     } catch (err: any) {
       console.error(err);
-      setGenerateImageError("Atelier service offline. Defaulting to sandbox placeholder.");
-      setImageUrl("https://images.unsplash.com/photo-1594633312681-425c7b97ccd1?auto=format&fit=crop&q=80&w=600");
+      // Leave imageUrl alone — silently swapping in a stock photo would let a
+      // vendor publish a listing whose image isn't their garment.
+      setGenerateImageError(
+        err instanceof ApiError
+          ? `${err.message} Paste an image URL instead.`
+          : "The image service is unavailable. Paste an image URL instead."
+      );
     } finally {
       setIsGeneratingImage(false);
     }
   };
 
-  // Vendor listed products (simulated filter)
-  const vendorProducts = products.filter((p) => p.vendorName === "Aura Archives");
+  // Listings this vendor actually owns. The backend enforces the same rule on
+  // write, so editing anything outside this set would 403 anyway.
+  const vendorProducts = products.filter((p) => vendorUserId && p.vendorUserId === vendorUserId);
 
   const handleAddProduct = (e: React.FormEvent) => {
     e.preventDefault();

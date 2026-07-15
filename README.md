@@ -1,50 +1,69 @@
-# StyleSwap — frontend
+# StyleSwap
 
-A fashion-rental marketplace UI: browse and rent designer clothing and jewelry,
-with customer, vendor, and admin views.
+A fashion-rental marketplace: browse and rent designer clothing and jewellery,
+with customer, vendor, and admin workspaces, and six Gemini-backed AI features.
 
-**This is the frontend only.** The backend was removed and will be rebuilt. See
-[API_CONTRACT.md](API_CONTRACT.md) for the spec the new backend must satisfy.
+React 19 + Vite frontend, seven Flask microservices behind a gateway,
+PostgreSQL for storage.
 
-## Run
+## Run it
+
+Two terminals. Backend first.
+
+```bash
+cd backend
+pip install -r requirements.txt
+cp .env.example .env          # fill in PG_SUPERPASSWORD and GEMINI_API_KEY
+python -m scripts.create_db   # role, database, schema
+python -m scripts.seed        # catalog + demo accounts
+python run_all.py             # all 8 services
+```
 
 ```bash
 npm install
-npm run dev      # http://localhost:5173
+npm run dev                   # http://localhost:5173
 ```
 
-No environment variables and no database are needed to run the UI.
+Sign in with `victoria@styleswap.com` / `password123` (customer),
+`cos@styleswap.com` (vendor), or `admin@styleswap.com` (admin).
 
-## State of things
+See [backend/README.md](backend/README.md) for architecture, layout, and
+troubleshooting; [API_CONTRACT.md](API_CONTRACT.md) for the endpoint surface.
 
-All data lives in React state, seeded from [src/data.ts](src/data.ts), and resets
-on refresh. Nothing persists.
+## Layout
 
-Login is not real: [WelcomeLogin.tsx](src/components/WelcomeLogin.tsx) matches
-your email against three demo personas and **does not check the password**. Any
-email logs you in as a customer.
+```
+src/               React frontend
+  api/client.ts    every backend call goes through here
+  components/      one file per view
+  types.ts         shared domain types; the API is built to match
+backend/           Flask services + Postgres  (see backend/README.md)
+```
 
-| Persona | Email | Lands on |
-|---|---|---|
-| Victoria Fontaine | `victoria@styleswap.com` | Customer portal |
-| Atelier COS Resell | `cos@styleswap.com` | Vendor workspace |
-| System Administrator | `admin@styleswap.com` | Admin dashboard |
+## How it fits together
 
-The six AI features still issue their `fetch` calls, which now fail with no
-server to answer them:
+Vite proxies `/api/*` and `/ai/*` to the gateway on `:8000`, so the browser
+stays on one origin and `fetch` paths stay relative. The gateway forwards each
+path to the service that owns it and passes the `Authorization` header through
+untouched — every service verifies the JWT itself.
 
-| Feature | Without a backend |
-|---|---|
-| Semantic search (Browse) | Degrades cleanly to client-side substring matching |
-| Virtual try-on | Shows the product image plus canned fit commentary |
-| Size recommendation | Falls back to size M |
-| AI Studio / vendor image generation | Error banner, no image |
-| AI Stylist | Error banner, no outfit |
-| Return damage scan | Throws; the return flow is broken |
+`src/types.ts` is the contract. The backend's `shared/serialize.py` maps
+snake_case rows onto those camelCase shapes in exactly one place.
 
-## Stack
+## What's real and what isn't
 
-React 19, Vite 6, TypeScript, Tailwind 4, `lucide-react`, `motion`.
+Real, and backed by Postgres: accounts and login (hashed passwords, JWT),
+products, reviews, cart, wishlist, orders, checkout, coupons, notifications,
+addresses, and the admin analytics figures.
 
-`src/types.ts` holds the shared domain types and is the reference for the
-rebuild.
+Not real yet:
+
+- **Payments.** Choosing "Razorpay (Online)" records the choice; no money moves.
+- **Admin platform settings.** The toggles on the admin dashboard are UI-only —
+  there's no settings service behind them, and the page says so.
+- **Virtual try-on compositing.** The AI writes a fit review; the image shown
+  is the product photo, not a composite of you wearing it.
+- **Delivery dates** are free text on the product (`"Tomorrow"`), not scheduling.
+
+The six AI features need `GEMINI_API_KEY`. Without it they return 503 and the
+UI shows an offline notice — the rest of the app is unaffected.

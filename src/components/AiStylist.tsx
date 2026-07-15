@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { Sparkles, Star, ShieldCheck, ArrowRight, RotateCcw, AlertCircle, Sparkle } from "lucide-react";
+import { api, ApiError } from "../api/client";
 
 interface StyledItem {
   name: string;
@@ -52,25 +53,10 @@ export default function AiStylist({ onAddLookToCart, onViewChange }: AiStylistPr
     setResult(null);
 
     try {
-      const res = await fetch("/api/stylist", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          occasion,
-          budget,
-          bodyType,
-          colors,
-          style,
-          weather,
-        }),
-      });
-
-      if (!res.ok) throw new Error("API failed");
-      const data = await res.json();
-      setResult(data);
+      setResult(await api.stylist({ occasion, budget, bodyType, colors, style, weather }));
     } catch (err: any) {
       console.error(err);
-      setError("Unable to contact StyleSwap server. Applying simulated stylist fallback.");
+      setError(err instanceof ApiError ? err.message : "Unable to reach the styling service.");
     } finally {
       setIsLoading(false);
     }
@@ -406,7 +392,7 @@ export default function AiStylist({ onAddLookToCart, onViewChange }: AiStylistPr
                 <AlertCircle className="w-12 h-12 text-red-500 mx-auto" />
                 <h4 className="font-serif text-xl text-[#1C1C1C]">Atelier Offline</h4>
                 <p className="text-xs text-[#6B6B6B] max-w-sm mx-auto leading-relaxed">
-                  We triggered the high-fidelity simulator due to missing API credentials. You can see the full generated outfit context nonetheless!
+                  {error}
                 </p>
                 <button
                   id="error-styling-btn"

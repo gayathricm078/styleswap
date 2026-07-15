@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { Camera, Upload, Sparkles, Image as ImageIcon, Check, Download, Share2, Sparkle } from "lucide-react";
 import { Product } from "../types";
+import { api, ApiError } from "../api/client";
 
 interface VirtualTryOnProps {
   products: Product[];
@@ -31,35 +32,32 @@ export default function VirtualTryOn({ products, onViewChange }: VirtualTryOnPro
     const activeAvatarUrl = activeAvatarObj?.url || "";
 
     try {
-      const res = await fetch("/ai/tryon", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          avatarUrl: activeAvatarUrl,
-          productUrl: selectedProduct.image,
-          productName: selectedProduct.name,
-          avatarName: selectedAvatar,
-          productBrand: selectedProduct.brand
-        })
+      const data = await api.tryOn({
+        avatarUrl: activeAvatarUrl,
+        productUrl: selectedProduct.image,
+        productName: selectedProduct.name,
+        avatarName: selectedAvatar,
+        productBrand: selectedProduct.brand,
       });
 
-      if (!res.ok) throw new Error("Try-on fetch failed");
-      const data = await res.json();
-      
       setCompositeResult(data.imageUrl);
       setTryOnReport({
         fitReview: data.fitReview,
         toneHarmony: data.toneHarmony,
-        styleScore: data.styleScore
+        styleScore: data.styleScore,
       });
     } catch (err) {
       console.error(err);
-      // Seamless luxury fallback
+      // Show the garment, but say plainly that the written review is missing
+      // rather than inventing praise for it.
       setCompositeResult(selectedProduct.image);
       setTryOnReport({
-        fitReview: `The ${selectedProduct.name} drapes beautifully on your model silhouette. Sizing fits comfortable and matches standard measurements.`,
-        toneHarmony: "The elegant, clean hues complement your skin tone, producing an elevated aesthetic presence under ambient or direct lighting.",
-        styleScore: "95/100"
+        fitReview:
+          err instanceof ApiError
+            ? `Fitting room commentary unavailable: ${err.message}`
+            : "Fitting room commentary is unavailable right now.",
+        toneHarmony: "—",
+        styleScore: "—",
       });
     } finally {
       setIsProcessing(false);

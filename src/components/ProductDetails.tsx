@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { Star, ShieldAlert, Sparkles, Heart, Calendar, Truck, ArrowLeft, Check, Sparkle } from "lucide-react";
 import { Product, Review } from "../types";
+import { api, ApiError } from "../api/client";
 
 interface ProductDetailsProps {
   product: Product;
@@ -54,29 +55,30 @@ export default function ProductDetails({
     setAiSizeResult(null);
 
     try {
-      const res = await fetch("/api/size-recommendation", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          height,
-          weight,
-          preferredFit: fitPref,
-          itemBrand: product.brand,
-        }),
+      const data = await api.sizeRecommendation({
+        height,
+        weight,
+        preferredFit: fitPref,
+        itemBrand: product.brand,
       });
-      const data = await res.json();
       setAiSizeResult({
-        size: data.recommendedSize || "M",
-        reasoning: data.reasoning || "Standard fitting recommendations applied.",
-        score: data.confidenceScore || "90%",
+        size: data.recommendedSize,
+        reasoning: data.reasoning,
+        score: data.confidenceScore,
       });
-      setSelectedSize(data.recommendedSize || "M");
+      // Only preselect a size the product actually stocks.
+      if (product.sizes.includes(data.recommendedSize)) {
+        setSelectedSize(data.recommendedSize);
+      }
     } catch (err) {
       console.error(err);
       setAiSizeResult({
-        size: "M",
-        reasoning: "Based on traditional knit metrics, size M is estimated for standard posture drape.",
-        score: "85%",
+        size: "—",
+        reasoning:
+          err instanceof ApiError
+            ? err.message
+            : "The size advisor is unavailable. Please pick a size manually.",
+        score: "—",
       });
     } finally {
       setIsAnalyzingSize(false);

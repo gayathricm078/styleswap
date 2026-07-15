@@ -5,3 +5,8 @@ coverage/
 .DS_Store
 *.log
 .env*
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/

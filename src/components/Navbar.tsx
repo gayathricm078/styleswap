@@ -1,6 +1,6 @@
 import React, { useState } from "react";
-import { Search, Heart, ShoppingBag, Bell, User, Sparkles, ShieldCheck, ClipboardList, Menu, ChevronDown } from "lucide-react";
-import { UserRole, Notification } from "../types";
+import { Search, Heart, ShoppingBag, Bell, User, Sparkles, ShieldCheck, ClipboardList, Menu, ChevronDown, Lock } from "lucide-react";
+import { UserRole, Notification, UserProfileData } from "../types";
 
 interface NavbarProps {
   currentRole: UserRole;
@@ -11,7 +11,7 @@ interface NavbarProps {
   wishlistCount: number;
   notifications: Notification[];
   onMarkNotificationRead: (id: string) => void;
-  userProfile: any;
+  userProfile: UserProfileData;
   onSearch: (query: string) => void;
   onLogout?: () => void;
 }
@@ -29,6 +29,8 @@ export default function Navbar({
   onSearch,
   onLogout,
 }: NavbarProps) {
+  // The account's true role, from the signed token — not the view being shown.
+  const accountRole = userProfile.role;
   const [searchQuery, setSearchQuery] = useState("");
   const [showSearchSuggestions, setShowSearchSuggestions] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
@@ -88,42 +90,43 @@ export default function Navbar({
                 <div className="px-4 py-1.5 text-[9px] text-[#6B6B6B] uppercase font-bold tracking-widest border-b border-[#262626] mb-1">
                   Select Workspace
                 </div>
-                <button
-                  id="role-cust-btn"
-                  onClick={() => {
-                    onRoleChange("customer");
-                    onViewChange("home");
-                    setShowRoleDropdown(false);
-                  }}
-                  className={`w-full px-4 py-2.5 text-xs text-left hover:bg-[#262626] transition flex items-center justify-between ${currentRole === "customer" ? "text-[#D4AF37] font-bold" : "text-[#F8F6F2]"}`}
-                >
-                  <span>Customer Portal</span>
-                  {currentRole === "customer" && <span className="w-1.5 h-1.5 bg-[#D4AF37] rounded-full"></span>}
-                </button>
-                <button
-                  id="role-vend-btn"
-                  onClick={() => {
-                    onRoleChange("vendor");
-                    onViewChange("vendor-dashboard");
-                    setShowRoleDropdown(false);
-                  }}
-                  className={`w-full px-4 py-2.5 text-xs text-left hover:bg-[#262626] transition flex items-center justify-between ${currentRole === "vendor" ? "text-[#D4AF37] font-bold" : "text-[#F8F6F2]"}`}
-                >
-                  <span>Vendor Workspace</span>
-                  {currentRole === "vendor" && <span className="w-1.5 h-1.5 bg-[#D4AF37] rounded-full"></span>}
-                </button>
-                <button
-                  id="role-admin-btn"
-                  onClick={() => {
-                    onRoleChange("admin");
-                    onViewChange("admin-dashboard");
-                    setShowRoleDropdown(false);
-                  }}
-                  className={`w-full px-4 py-2.5 text-xs text-left hover:bg-[#262626] transition flex items-center justify-between ${currentRole === "admin" ? "text-[#D4AF37] font-bold" : "text-[#F8F6F2]"}`}
-                >
-                  <span>Admin Dashboard</span>
-                  {currentRole === "admin" && <span className="w-1.5 h-1.5 bg-[#D4AF37] rounded-full"></span>}
-                </button>
+                {/* Only the workspace this account is entitled to is clickable.
+                    The role comes from the signed token, so entering another
+                    portal would just 403 on every request. */}
+                {([
+                  { role: "customer" as UserRole, label: "Customer Portal", view: "home", id: "role-cust-btn" },
+                  { role: "vendor" as UserRole, label: "Vendor Workspace", view: "vendor-dashboard", id: "role-vend-btn" },
+                  { role: "admin" as UserRole, label: "Admin Dashboard", view: "admin-dashboard", id: "role-admin-btn" },
+                ]).map((option) => {
+                  const permitted = accountRole === option.role;
+                  return (
+                    <button
+                      key={option.role}
+                      id={option.id}
+                      disabled={!permitted}
+                      title={permitted ? undefined : `Your account is a ${accountRole}. Sign in as a ${option.role} to open this.`}
+                      onClick={() => {
+                        if (!permitted) return;
+                        onRoleChange(option.role);
+                        onViewChange(option.view);
+                        setShowRoleDropdown(false);
+                      }}
+                      className={`w-full px-4 py-2.5 text-xs text-left transition flex items-center justify-between ${
+                        !permitted
+                          ? "text-[#5A5A5A] cursor-not-allowed"
+                          : currentRole === option.role
+                          ? "text-[#D4AF37] font-bold hover:bg-[#262626]"
+                          : "text-[#F8F6F2] hover:bg-[#262626]"
+                      }`}
+                    >
+                      <span>{option.label}</span>
+                      {currentRole === option.role && permitted && (
+                        <span className="w-1.5 h-1.5 bg-[#D4AF37] rounded-full"></span>
+                      )}
+                      {!permitted && <Lock className="w-3 h-3" />}
+                    </button>
+                  );
+                })}
               </div>
             </>
           )}

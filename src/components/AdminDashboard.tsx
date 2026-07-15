@@ -1,10 +1,24 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { ShieldCheck, BarChart3, Users, Settings, Activity, ClipboardList, Sparkles, Check, ToggleLeft, ToggleRight } from "lucide-react";
 import { Product } from "../types";
+import { api } from "../api/client";
 
 interface AdminDashboardProps {
   products: Product[];
   ordersCount: number;
+}
+
+interface Analytics {
+  totalRevenue: number;
+  activeRentals: number;
+  totalUsers: number;
+  averageSustainability: number;
+  totalProducts: number;
+  perfectReturns: number;
+  damagedReturns: number;
+  returnRatePercentage: number;
+  categoryDistribution: { name: string; value: number }[];
+  rentTrends: { month: string; rentals: number; revenue: number }[];
 }
 
 export default function AdminDashboard({ products, ordersCount }: AdminDashboardProps) {
@@ -15,19 +29,21 @@ export default function AdminDashboard({ products, ordersCount }: AdminDashboard
   const [securityPct, setSecurityPct] = useState(25);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
+  const [stats, setStats] = useState<Analytics | null>(null);
+  const [statsError, setStatsError] = useState<string | null>(null);
+
+  useEffect(() => {
+    api
+      .getAnalytics()
+      .then(setStats)
+      .catch((err) => setStatsError(err?.message || "Could not load analytics."));
+  }, []);
+
   const handleSaveSettings = () => {
-    setSuccessMsg("Global platform parameters updated successfully!");
+    // These toggles are UI-only: there is no settings service behind them yet.
+    setSuccessMsg("Saved locally — platform settings are not yet persisted server-side.");
     setTimeout(() => setSuccessMsg(null), 3500);
   };
-
-  // Mock audits
-  const systemAudits = [
-    { id: 1, type: "User", msg: "Helena registered as swapper", date: "Just now" },
-    { id: 2, type: "AI", msg: "Gemini 3.5 completed size drape analysis for user Alistair", date: "5 mins ago" },
-    { id: 3, type: "Audit", msg: "Ozone sterilizer logs verified for Ritz Wedding Gown", date: "12 mins ago" },
-    { id: 4, type: "Vendor", msg: "Aura Archives listed new Saint Laurent Blazer", date: "25 mins ago" },
-    { id: 5, type: "System", msg: "Refund processing completed for deposit transaction #2901", date: "1 hour ago" },
-  ];
 
   return (
     <div className="bg-[#F8F6F2] min-h-screen py-10 px-6 animate-fadeIn">
@@ -50,36 +66,48 @@ export default function AdminDashboard({ products, ordersCount }: AdminDashboard
           </div>
         </div>
 
-        {/* Global KPI Counters */}
+        {statsError && (
+          <div className="mb-6 bg-white border border-red-200 rounded-2xl px-5 py-4 text-xs text-[#6B6B6B]">
+            Live analytics unavailable: {statsError}
+          </div>
+        )}
+
+        {/* Global KPI Counters — every figure below is queried from Postgres. */}
         <div className="grid grid-cols-2 lg:grid-cols-5 gap-6 mb-10 text-xs">
           <div className="bg-white border border-[#DADADA] rounded-[24px] p-5 shadow-sm space-y-2">
             <span className="text-[#6B6B6B] uppercase font-sans tracking-wider block">Total Members</span>
-            <p className="text-2xl font-serif font-bold text-[#1C1C1C]">1,260</p>
-            <span className="text-green-600 font-bold">↑ 12% Month-over-Month</span>
+            <p className="text-2xl font-serif font-bold text-[#1C1C1C]">{stats ? stats.totalUsers : "—"}</p>
+            <span className="text-[#6B6B6B]">Avg. sustainability {stats ? stats.averageSustainability : "—"}</span>
           </div>
 
           <div className="bg-white border border-[#DADADA] rounded-[24px] p-5 shadow-sm space-y-2">
-            <span className="text-[#6B6B6B] uppercase font-sans tracking-wider block">Platform Curators</span>
-            <p className="text-2xl font-serif font-bold text-[#1C1C1C]">14 Stores</p>
-            <span className="text-[#6B6B6B]">7 elite tier verified</span>
+            <span className="text-[#6B6B6B] uppercase font-sans tracking-wider block">Active Rentals</span>
+            <p className="text-2xl font-serif font-bold text-[#1C1C1C]">{stats ? stats.activeRentals : "—"}</p>
+            <span className="text-[#6B6B6B]">Booked, out, or rented</span>
           </div>
 
           <div className="bg-white border border-[#DADADA] rounded-[24px] p-5 shadow-sm space-y-2">
             <span className="text-[#6B6B6B] uppercase font-sans tracking-wider block">Durable Inventory</span>
-            <p className="text-2xl font-serif font-bold text-[#1C1C1C]">{products.length} Garments</p>
-            <span className="text-[#D4AF37] font-semibold">Total asset value: ₹85k</span>
+            <p className="text-2xl font-serif font-bold text-[#1C1C1C]">
+              {stats ? stats.totalProducts : products.length} Garments
+            </p>
+            <span className="text-[#D4AF37] font-semibold">Live catalog count</span>
           </div>
 
           <div className="bg-white border border-[#DADADA] rounded-[24px] p-5 shadow-sm space-y-2">
             <span className="text-[#6B6B6B] uppercase font-sans tracking-wider block">Agreement Volume</span>
-            <p className="text-2xl font-serif font-bold text-[#1C1C1C]">{ordersCount + 42} Swaps</p>
-            <span className="text-green-600 font-bold">0% return delay index</span>
+            <p className="text-2xl font-serif font-bold text-[#1C1C1C]">{ordersCount} Swaps</p>
+            <span className="text-[#6B6B6B]">
+              {stats ? `${stats.returnRatePercentage}% returned` : "—"}
+            </span>
           </div>
 
           <div className="bg-white border border-[#DADADA] rounded-[24px] p-5 shadow-sm space-y-2">
-            <span className="text-[#6B6B6B] uppercase font-sans tracking-wider block">Platform Fees</span>
-            <p className="text-2xl font-serif font-bold text-[#1C1C1C]">₹4,860</p>
-            <span className="text-[#6B6B6B]">Average rate: {platformFee}%</span>
+            <span className="text-[#6B6B6B] uppercase font-sans tracking-wider block">Gross Revenue</span>
+            <p className="text-2xl font-serif font-bold text-[#1C1C1C]">
+              ₹{stats ? stats.totalRevenue.toLocaleString() : "—"}
+            </p>
+            <span className="text-[#6B6B6B]">Sum of all orders</span>
           </div>
         </div>
 
@@ -125,20 +153,32 @@ export default function AdminDashboard({ products, ordersCount }: AdminDashboard
               </div>
             </div>
 
-            {/* Audit Stream Tracker */}
+            {/* Catalog composition, grouped live from catalog.products. */}
             <div className="space-y-4 pt-4 border-t border-[#DADADA]">
               <h4 className="text-xs font-sans uppercase tracking-widest font-bold text-[#1C1C1C] flex items-center gap-1.5">
-                <Activity className="w-4 h-4 text-[#D4AF37]" /> Active System Logs & Audit Trails
+                <Activity className="w-4 h-4 text-[#D4AF37]" /> Inventory by Category
               </h4>
 
-              <div className="space-y-2.5 font-mono text-[11px] bg-[#FAF9F6] border border-[#DADADA] rounded-2xl p-4 max-h-48 overflow-y-auto">
-                {systemAudits.map((aud) => (
-                  <div key={aud.id} className="flex justify-between items-start gap-4 py-1 border-b border-gray-100 last:border-0">
-                    <span className="text-[#6B6B6B] shrink-0">[{aud.type}]</span>
-                    <span className="text-[#1C1C1C] text-left flex-1 leading-relaxed">{aud.msg}</span>
-                    <span className="text-[#6B6B6B] shrink-0 text-right">{aud.date}</span>
-                  </div>
-                ))}
+              <div className="space-y-2.5 text-[11px] bg-[#FAF9F6] border border-[#DADADA] rounded-2xl p-4 max-h-48 overflow-y-auto">
+                {!stats && <div className="text-[#6B6B6B]">Loading…</div>}
+                {stats?.categoryDistribution.length === 0 && (
+                  <div className="text-[#6B6B6B]">No products in the catalog yet.</div>
+                )}
+                {stats?.categoryDistribution.map((row) => {
+                  const max = Math.max(...stats.categoryDistribution.map((c) => c.value), 1);
+                  return (
+                    <div key={row.name} className="flex items-center gap-3 py-1">
+                      <span className="text-[#1C1C1C] w-36 shrink-0 font-sans">{row.name}</span>
+                      <div className="flex-1 h-2 bg-[#EDEAE4] rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-[#303030] rounded-full"
+                          style={{ width: `${(row.value / max) * 100}%` }}
+                        />
+                      </div>
+                      <span className="text-[#6B6B6B] w-6 text-right font-mono">{row.value}</span>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           </div>
