@@ -136,9 +136,20 @@ doesn't exist yet. Run `create_db.py` first.
 **Frontend shows "Cannot reach the StyleSwap server"** — the gateway isn't
 running, or it's on a port other than 8000. Check `/api/health`.
 
-**AI features return 503** — `GEMINI_API_KEY` is empty in `.env`. Everything
-else works without it.
+**AI features return 503** — either `GEMINI_API_KEY` is empty in `.env`, or the
+model is overloaded. Everything else works without a key.
 
-**Wrong Gemini model** — `GEMINI_TEXT_MODEL` / `GEMINI_IMAGE_MODEL` in `.env`.
-Model availability changes; if you get a 502 mentioning the model name, set a
-current one.
+**AI returns 429** — the key is fine, but your project has no quota for that
+model. Free-tier keys report `limit: 0` for `gemini-2.0-flash` and `2.5-pro`
+outright. Switch `GEMINI_TEXT_MODEL` to one with quota; `gemini-3.1-flash-lite`
+is the verified default. `.env.example` lists what's known good and bad, and
+how to list what your key can reach.
+
+**A code change to a service doesn't take effect** — `run_all.py` children can
+survive a Ctrl-C on Windows. Check for strays before restarting:
+
+```powershell
+Get-CimInstance Win32_Process -Filter "Name='python.exe'" |
+  Where-Object { $_.CommandLine -like '*styleswap*' } |
+  ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
+```

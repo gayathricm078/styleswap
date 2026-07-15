@@ -123,34 +123,37 @@ export default function AdminDashboard({ products, ordersCount }: AdminDashboard
               <span className="text-[10px] text-[#6B6B6B]">Monthly Aggregate</span>
             </div>
 
-            {/* Handcrafted Beautiful Minimalist SVG Bar Chart */}
-            <div className="relative w-full h-64 bg-[#FAF9F6] rounded-2xl flex items-end justify-between p-6 pt-10 border border-[#DADADA]/30">
-              {/* Gridlines */}
-              <div className="absolute inset-x-6 top-10 border-b border-[#DADADA]/20 text-[9px] text-[#6B6B6B]/60 text-right">80 Swaps</div>
-              <div className="absolute inset-x-6 top-28 border-b border-[#DADADA]/20 text-[9px] text-[#6B6B6B]/60 text-right">40 Swaps</div>
-              <div className="absolute inset-x-6 top-44 border-b border-[#DADADA]/20 text-[9px] text-[#6B6B6B]/60 text-right">10 Swaps</div>
-
-              {/* Minimal bar groups */}
-              <div className="flex flex-col items-center gap-1.5 z-10">
-                <div className="w-10 bg-[#D3C6B8] rounded-t-lg transition hover:bg-[#303030]" style={{ height: "45px" }}></div>
-                <span className="text-[10px] font-mono text-[#6B6B6B]">Feb</span>
-              </div>
-              <div className="flex flex-col items-center gap-1.5 z-10">
-                <div className="w-10 bg-[#D3C6B8] rounded-t-lg transition hover:bg-[#303030]" style={{ height: "65px" }}></div>
-                <span className="text-[10px] font-mono text-[#6B6B6B]">Mar</span>
-              </div>
-              <div className="flex flex-col items-center gap-1.5 z-10">
-                <div className="w-10 bg-[#D3C6B8] rounded-t-lg transition hover:bg-[#303030]" style={{ height: "90px" }}></div>
-                <span className="text-[10px] font-mono text-[#6B6B6B]">Apr</span>
-              </div>
-              <div className="flex flex-col items-center gap-1.5 z-10">
-                <div className="w-10 bg-[#D3C6B8] rounded-t-lg transition hover:bg-[#303030]" style={{ height: "135px" }}></div>
-                <span className="text-[10px] font-mono text-[#6B6B6B]">May</span>
-              </div>
-              <div className="flex flex-col items-center gap-1.5 z-10">
-                <div className="w-10 bg-[#303030] rounded-t-lg" style={{ height: "170px" }}></div>
-                <span className="text-[10px] font-mono text-[#1C1C1C] font-bold">Jun</span>
-              </div>
+            {/* Bars are grouped by month from orders.orders. An empty month
+                range means no orders yet, which is worth showing plainly
+                rather than filling with invented growth. */}
+            <div className="relative w-full h-64 bg-[#FAF9F6] rounded-2xl flex items-end justify-between gap-2 p-6 pt-10 border border-[#DADADA]/30">
+              {!stats && (
+                <div className="w-full text-center text-[10px] text-[#6B6B6B] self-center">Loading…</div>
+              )}
+              {stats?.rentTrends.length === 0 && (
+                <div className="w-full text-center text-[10px] text-[#6B6B6B] self-center">
+                  No orders yet — place one and it appears here.
+                </div>
+              )}
+              {stats?.rentTrends.map((t, i) => {
+                const peak = Math.max(...stats.rentTrends.map((x) => x.rentals), 1);
+                const isLatest = i === stats.rentTrends.length - 1;
+                return (
+                  <div key={`${t.month}-${i}`} className="flex flex-col items-center gap-1.5 z-10 flex-1">
+                    <span className="text-[9px] font-mono text-[#6B6B6B]">{t.rentals}</span>
+                    <div
+                      className={`w-10 rounded-t-lg transition ${isLatest ? "bg-[#303030]" : "bg-[#D3C6B8] hover:bg-[#303030]"}`}
+                      style={{ height: `${Math.max((t.rentals / peak) * 170, 4)}px` }}
+                      title={`${t.month}: ${t.rentals} rentals, ₹${t.revenue}`}
+                    />
+                    <span
+                      className={`text-[10px] font-mono ${isLatest ? "text-[#1C1C1C] font-bold" : "text-[#6B6B6B]"}`}
+                    >
+                      {t.month}
+                    </span>
+                  </div>
+                );
+              })}
             </div>
 
             {/* Catalog composition, grouped live from catalog.products. */}

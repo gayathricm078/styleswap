@@ -11,6 +11,7 @@ them directly. Two deliberate departures from the old Node server:
 """
 import json
 import sys
+import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
@@ -51,16 +52,41 @@ def client():
     return _client
 
 
+def _generate(model: str, prompt: str, cfg) -> object:
+    """Call Gemini, retrying transient overload.
+
+    A 503 means the model is busy, not misconfigured, and clears on its own.
+    Quota (429) and bad requests are raised immediately — retrying those just
+    makes the user wait for the same failure.
+    """
+    last: Exception | None = None
+    for attempt in range(3):
+        try:
+            return client().models.generate_content(model=model, contents=prompt, config=cfg)
+        except ApiError:
+            raise
+        except Exception as exc:
+            last = exc
+            if "503" in str(exc) or "UNAVAILABLE" in str(exc):
+                app.logger.warning("%s overloaded (attempt %d/3), retrying", model, attempt + 1)
+                time.sleep(2 * (attempt + 1))
+                continue
+            raise
+    raise ApiError(
+        f"{model} is overloaded right now. Please try again in a moment.", 503
+    ) from last
+
+
 def generate_json(prompt: str, model: str | None = None) -> dict | list:
     """Ask Gemini for JSON and parse it. Tolerates a fenced ```json block,
     which the model still emits occasionally even in JSON mode."""
     from google.genai import types
 
     try:
-        response = client().models.generate_content(
-            model=model or config.GEMINI_TEXT_MODEL,
-            contents=prompt,
-            config=types.GenerateContentConfig(response_mime_type="application/json"),
+        response = _generate(
+            model or config.GEMINI_TEXT_MODEL,
+            prompt,
+            types.GenerateContentConfig(response_mime_type="application/json"),
         )
     except ApiError:
         raise
@@ -148,7 +174,18 @@ def damage_detection():
     if preset not in scenarios:
         raise ApiError("damagePreset must be perfect, stain, or tear", 400)
 
+    # The fee bands are stated explicitly because this number is charged to a
+    # real customer. Left unanchored, the model graded a tea stain as "Major
+    # Damage" and asked for the full clamp value.
     prompt = f"""You are the automated return scanner for StyleSwap. Assess {scenarios[preset]}.
+
+Grade conservatively and price the fee against these bands:
+- Perfect          -> condition "Perfect",      feeCharged 0,      actionRequired "None"
+- Cleanable mark   -> condition "Minor Damage", feeCharged 10-30,  actionRequired "Dry Clean"
+- Small seam tear  -> condition "Minor Damage", feeCharged 20-40,  actionRequired "Sartorial Seam Repair"
+- Irreparable      -> condition "Major Damage", feeCharged 80-200, actionRequired "Write-off"
+
+A stain that dry cleaning removes is Minor Damage, not Major.
 
 Respond with JSON exactly matching:
 {{
@@ -160,13 +197,17 @@ Respond with JSON exactly matching:
 }}"""
     data = generate_json(prompt)
 
-    # order-service records feeCharged against the customer, so clamp it to a
-    # sane range rather than trusting whatever the model produced.
+    # order-service records feeCharged against the customer, so clamp it rather
+    # than trusting whatever the model produced. A pristine return is always
+    # free regardless of what the model says.
     try:
-        fee = max(0, min(int(data.get("feeCharged", 0)), 500))
+        fee = max(0, min(int(data.get("feeCharged", 0)), 200))
     except (TypeError, ValueError):
         fee = 0
     data["feeCharged"] = 0 if preset == "perfect" else fee
+    if preset == "perfect":
+        data["condition"] = "Perfect"
+        data["actionRequired"] = "None"
     return jsonify(data)
 
 
@@ -266,10 +307,10 @@ def generate_image():
     )
 
     try:
-        response = client().models.generate_content(
-            model=config.GEMINI_IMAGE_MODEL,
-            contents=styled,
-            config=types.GenerateContentConfig(response_modalities=["TEXT", "IMAGE"]),
+        response = _generate(
+            config.GEMINI_IMAGE_MODEL,
+            styled,
+            types.GenerateContentConfig(response_modalities=["TEXT", "IMAGE"]),
         )
     except ApiError:
         raise
