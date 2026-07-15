@@ -71,6 +71,225 @@ function getGeminiClient(): GoogleGenAI {
 }
 
 // -------------------------------------------------------------
+// Random Joke Generator Endpoint (External API Integration)
+// POST /api/joke or GET /api/joke
+// Uses Official Joke API: https://official-joke-api.appspot.com/
+// -------------------------------------------------------------
+app.get("/api/joke", async (req, res) => {
+  try {
+    const response = await fetch("https://official-joke-api.appspot.com/jokes/random");
+    
+    if (!response.ok) {
+      throw new Error(`Joke API returned status ${response.status}`);
+    }
+
+    const joke = await response.json();
+    
+    // Format response to match our StyleSwap aesthetic
+    return res.json({
+      success: true,
+      joke: {
+        id: joke.id,
+        type: joke.type, // "general", "programming", "knock-knock"
+        setup: joke.setup || "",
+        punchline: joke.punchline || "",
+        fullJoke: joke.setup ? `${joke.setup} ${joke.punchline}` : joke.punchline,
+        category: joke.type === "programming" ? "Programming Humor" : "General",
+      }
+    });
+  } catch (error: any) {
+    console.error("Joke API Error:", error.message);
+    
+    // Fallback: Serve a curated StyleSwap-themed joke
+    const fallbackJokes = [
+      {
+        id: 1,
+        setup: "Why did the fashion AI go to therapy?",
+        punchline: "Because it had too many layers to work through!",
+      },
+      {
+        id: 2,
+        setup: "How many stylists does it take to change a dress recommendation?",
+        punchline: "None—it's already perfect in StyleSwap!",
+      },
+      {
+        id: 3,
+        setup: "Why don't rental clothes ever get lonely?",
+        punchline: "Because they're always being worn by someone new!",
+      },
+      {
+        id: 4,
+        setup: "What did the sustainable fashion AI say?",
+        punchline: "I'm really into recycling—literally!",
+      },
+      {
+        id: 5,
+        setup: "Why did the minimalist refuse to buy clothes?",
+        punchline: "Too many options! StyleSwap rental made it easy though.",
+      },
+    ];
+
+    const randomJoke = fallbackJokes[Math.floor(Math.random() * fallbackJokes.length)];
+    
+    return res.json({
+      success: true,
+      isFallback: true,
+      joke: {
+        id: randomJoke.id,
+        type: "fashion-humor",
+        setup: randomJoke.setup,
+        punchline: randomJoke.punchline,
+        fullJoke: `${randomJoke.setup} ${randomJoke.punchline}`,
+        category: "StyleSwap Exclusive",
+      }
+    });
+  }
+});
+
+// Alternative POST endpoint for joke generation with optional category
+app.post("/api/joke", async (req, res) => {
+  const { category } = req.body;
+  
+  try {
+    // Map category to Joke API endpoints
+    let url = "https://official-joke-api.appspot.com/jokes/random";
+    if (category && category.toLowerCase() === "programming") {
+      url = "https://official-joke-api.appspot.com/jokes/programming/random";
+    }
+
+    const response = await fetch(url);
+    
+    if (!response.ok) {
+      throw new Error(`Joke API returned status ${response.status}`);
+    }
+
+    const joke = await response.json();
+    
+    return res.json({
+      success: true,
+      joke: {
+        id: joke.id,
+        type: joke.type,
+        setup: joke.setup || "",
+        punchline: joke.punchline || "",
+        fullJoke: joke.setup ? `${joke.setup} ${joke.punchline}` : joke.punchline,
+        category: joke.type === "programming" ? "Programming Humor" : "General",
+      }
+    });
+  } catch (error: any) {
+    console.error("Joke API Error:", error.message);
+    
+    // Return fallback
+    const fallbackJokes = [
+      {
+        id: 1,
+        setup: "Why did the fashion AI go to therapy?",
+        punchline: "Because it had too many layers to work through!",
+      },
+      {
+        id: 2,
+        setup: "How many stylists does it take to change a dress recommendation?",
+        punchline: "None—it's already perfect in StyleSwap!",
+      },
+      {
+        id: 3,
+        setup: "Why don't rental clothes ever get lonely?",
+        punchline: "Because they're always being worn by someone new!",
+      },
+      {
+        id: 4,
+        setup: "What did the sustainable fashion AI say?",
+        punchline: "I'm really into recycling—literally!",
+      },
+      {
+        id: 5,
+        setup: "Why did the minimalist refuse to buy clothes?",
+        punchline: "Too many options! StyleSwap rental made it easy though.",
+      },
+    ];
+
+    const randomJoke = fallbackJokes[Math.floor(Math.random() * fallbackJokes.length)];
+    
+    return res.json({
+      success: true,
+      isFallback: true,
+      joke: {
+        id: randomJoke.id,
+        type: "fashion-humor",
+        setup: randomJoke.setup,
+        punchline: randomJoke.punchline,
+        fullJoke: `${randomJoke.setup} ${randomJoke.punchline}`,
+        category: "StyleSwap Exclusive",
+      }
+    });
+  }
+});
+
+// Batch joke generator: GET /api/joke/batch?count=5
+app.get("/api/joke/batch", async (req, res) => {
+  const count = Math.min(parseInt(req.query.count as string) || 5, 20); // Max 20 jokes
+  const jokes = [];
+
+  for (let i = 0; i < count; i++) {
+    try {
+      const response = await fetch("https://official-joke-api.appspot.com/jokes/random");
+      if (response.ok) {
+        const joke = await response.json();
+        jokes.push({
+          id: joke.id,
+          type: joke.type,
+          setup: joke.setup || "",
+          punchline: joke.punchline || "",
+          fullJoke: joke.setup ? `${joke.setup} ${joke.punchline}` : joke.punchline,
+          category: joke.type === "programming" ? "Programming Humor" : "General",
+        });
+      }
+    } catch (error) {
+      console.warn(`Failed to fetch joke ${i + 1}:`, error);
+    }
+  }
+
+  if (jokes.length === 0) {
+    // Return fallback batch
+    const fallbackJokes = [
+      {
+        id: 1,
+        setup: "Why did the fashion AI go to therapy?",
+        punchline: "Because it had too many layers to work through!",
+        type: "fashion-humor",
+        category: "StyleSwap Exclusive",
+      },
+      {
+        id: 2,
+        setup: "How many stylists does it take to change a dress recommendation?",
+        punchline: "None—it's already perfect in StyleSwap!",
+        type: "fashion-humor",
+        category: "StyleSwap Exclusive",
+      },
+      {
+        id: 3,
+        setup: "Why don't rental clothes ever get lonely?",
+        punchline: "Because they're always being worn by someone new!",
+        type: "fashion-humor",
+        category: "StyleSwap Exclusive",
+      },
+    ];
+    return res.json({
+      success: true,
+      isFallback: true,
+      count: fallbackJokes.length,
+      jokes: fallbackJokes,
+    });
+  }
+
+  return res.json({
+    success: true,
+    count: jokes.length,
+    jokes,
+  });
+});
+
+// -------------------------------------------------------------
 // AI Stylist Endpoint (Calls Gemini 3.5 Flash)
 // -------------------------------------------------------------
 app.post("/api/stylist", async (req, res) => {
@@ -195,10 +414,10 @@ Your response MUST be JSON matching this schema:
     const fallbackOutfits: Record<string, any> = {
       "Wedding": {
         outfitName: "The Alabaster Court Ensemble",
-        explanation: "An impeccably structured drape look featuring 100% organic mulberry silk gown paired with brushed architectural gold. Crafted specifically for formal wedding banquets and high-fashion editorial evenings.",
+        explanation: "An impeccably structured drape look featuring 100% organic mulberry silk gown paired with brushed architectural gold. Crafted specifically for formal wedding banquets and hi[...]
         dress: {
           name: "Silk Halter Wedding Gown",
-          brand: "L’Aura Bridal",
+          brand: "L'Aura Bridal",
           description: "An elegant, backless halter-neck gown draped in heavy mulberry silk.",
           rentalPrice: 75
         },
@@ -277,7 +496,7 @@ Provide your recommendation in a strict JSON format with exactly three fields:
 {
   "recommendedSize": "S", "M", "L", or "XL" string,
   "confidenceScore": "e.g. 94%" string,
-  "reasoning": "A precise, polite explanation referencing the brand's shoulder cut and the fabric drape (e.g., 'COS tailored blazers run slightly large. Based on your 178cm height, a size Medium will achieve your preferred oversized fit without slipping at the shoulders.')"
+  "reasoning": "A precise, polite explanation referencing the brand's shoulder cut and the fabric drape (e.g., 'COS tailored blazers run slightly large. Based on your 178cm height, a size Medium [...]
 }`;
 
     const response = await ai.models.generateContent({
@@ -314,7 +533,7 @@ Provide your recommendation in a strict JSON format with exactly three fields:
     return res.json({
       recommendedSize: size,
       confidenceScore: "91%",
-      reasoning: `Based on your height of ${h}cm and weight of ${w}kg, we recommend size ${size}. This matches the structured shoulder cuts of ${itemBrand || "our premium designer"} archives and achieves an elegant, comfortable fit.`
+      reasoning: `Based on your height of ${h}cm and weight of ${w}kg, we recommend size ${size}. This matches the structured shoulder cuts of ${itemBrand || "our premium designer"} archives and [...]
     });
   }
 });
@@ -515,10 +734,10 @@ Your response MUST be JSON matching this schema:
     const fallbackOutfits: Record<string, any> = {
       "Wedding": {
         outfitName: "The Alabaster Court Ensemble",
-        explanation: "An impeccably structured drape look featuring 100% organic mulberry silk gown paired with brushed architectural gold. Crafted specifically for formal wedding banquets and high-fashion editorial evenings.",
+        explanation: "An impeccably structured drape look featuring 100% organic mulberry silk gown paired with brushed architectural gold. Crafted specifically for formal wedding banquets and hi[...]
         dress: {
           name: "Silk Halter Wedding Gown",
-          brand: "L’Aura Bridal",
+          brand: "L'Aura Bridal",
           description: "An elegant, backless halter-neck gown draped in heavy mulberry silk.",
           rentalPrice: 75
         },
@@ -722,7 +941,7 @@ Return a strict JSON response matching this schema:
     return res.json(data);
   } catch (error) {
     return res.json({
-      explanation: `To complete your look, we have curated an architectural accent suite in ${metalPreference || "Classic Gold"}. These statement pieces elevate the neckline and match the premium occasion context.`,
+      explanation: `To complete your look, we have curated an architectural accent suite in ${metalPreference || "Classic Gold"}. These statement pieces elevate the neckline and match the premium[...]
       earrings: {
         name: `${metalPreference || "Gold"} Arch Drop Link Earrings`,
         brand: "Savoir Jewelry",
@@ -926,16 +1145,14 @@ Return a strict JSON response matching this schema:
   } catch (error) {
     return res.json({
       imageUrl: productUrl,
-      fitReview: `The ${productName} drapes beautifully on ${avatarName || "your"} silhouette. The shoulder seam aligns perfectly to support a relaxed yet structured contour, true to ${productBrand || "the designer's"} atelier sizing.`,
+      fitReview: `The ${productName} drapes beautifully on ${avatarName || "your"} silhouette. The shoulder seam aligns perfectly to support a relaxed yet structured contour, true to ${productBra[...]
       toneHarmony: "The clean neutral tones bring out soft ambient contrasts, perfect for studio lighting or open-air gallery gatherings.",
       styleScore: "96/100"
     });
   }
 });
 
-// -------------------------------------------------------------
 // AI Custom Image Generation Endpoint (Calls Gemini 3.1 Flash Lite Image)
-// -------------------------------------------------------------
 app.post("/api/generate-image", async (req, res) => {
   const { prompt, aspectRatio = "1:1" } = req.body;
   
@@ -946,7 +1163,7 @@ app.post("/api/generate-image", async (req, res) => {
       contents: {
         parts: [
           {
-            text: `High fashion circular archival fashion catalog photo. Subject: ${prompt}. Premium aesthetic, neutral off-white or architectural background, studio lightning, shot on Hasselblad, luxury designer editorial style.`,
+            text: `High fashion circular archival fashion catalog photo. Subject: ${prompt}. Premium aesthetic, neutral off-white or architectural background, studio lightning, shot on Hasselblad[...]
           },
         ],
       },
