@@ -75,17 +75,28 @@ def create_coupon():
     if value <= 0:
         raise ApiError("value must be positive", 400)
 
+    code = body["code"].strip()
+
+    # Deactivation is a soft delete, so the row survives. Re-creating a code
+    # that was previously deactivated revives it with the new terms; only a
+    # collision with a *live* code is an error.
+    existing = db.query_one("SELECT * FROM coupons.coupons WHERE upper(code) = upper(%s)", (code,))
+    if existing and existing["active"]:
+        raise ApiError("An active coupon with that code already exists", 409)
+
     row = db.execute(
         """
-        INSERT INTO coupons.coupons (code, discount_type, value, description)
-        VALUES (upper(%s), %s, %s, %s)
-        ON CONFLICT (code) DO NOTHING
+        INSERT INTO coupons.coupons (code, discount_type, value, description, active)
+        VALUES (upper(%s), %s, %s, %s, true)
+        ON CONFLICT (code) DO UPDATE
+        SET discount_type = EXCLUDED.discount_type,
+            value = EXCLUDED.value,
+            description = EXCLUDED.description,
+            active = true
         RETURNING *
         """,
-        (body["code"].strip(), body["discountType"], value, body["description"]),
+        (code, body["discountType"], value, body["description"]),
     )
-    if not row:
-        raise ApiError("A coupon with that code already exists", 409)
     return jsonify(serialize.coupon_json(row)), 201
 
 

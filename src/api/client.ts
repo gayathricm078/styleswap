@@ -4,7 +4,7 @@
  * Vite proxies /api and /ai to the gateway on :8000 (see vite.config.ts), so
  * paths stay relative and the browser sees one origin.
  */
-import { Address, CartItem, Coupon, Notification, Order, Product, Review, UserProfileData } from "../types";
+import { Address, CartItem, Coupon, Notification, Order, Product, Review, UserProfileData, UserRole } from "../types";
 
 const TOKEN_KEY = "styleswap.token";
 
@@ -200,6 +200,12 @@ export const api = {
       body: { code, subtotal },
     }),
 
+  createCoupon: (coupon: Coupon) =>
+    request<Coupon>("/api/coupons", { method: "POST", body: coupon }),
+
+  deactivateCoupon: (code: string) =>
+    request<{ success: boolean; code: string }>(`/api/coupons/${code}`, { method: "DELETE" }),
+
   // ------------------------------------------------------- notifications
   listNotifications: () => request<Notification[]>("/api/notifications"),
 
@@ -207,6 +213,14 @@ export const api = {
     request<Notification>(`/api/notifications/${id}/read`, { method: "PUT" }),
 
   // ------------------------------------------------------------- admin
+  listUsers: () => request<UserProfileData[]>("/api/user/admin/users"),
+
+  setUserRole: (userId: string, role: UserRole) =>
+    request<UserProfileData>(`/api/user/users/${userId}/role`, {
+      method: "PUT",
+      body: { role },
+    }),
+
   getAnalytics: () =>
     request<{
       totalRevenue: number;

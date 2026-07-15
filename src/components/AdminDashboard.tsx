@@ -1,11 +1,14 @@
 import React, { useEffect, useState } from "react";
-import { ShieldCheck, BarChart3, Users, Settings, Activity, ClipboardList, Sparkles, Check, ToggleLeft, ToggleRight } from "lucide-react";
+import { ShieldCheck, BarChart3, Activity } from "lucide-react";
 import { Product } from "../types";
 import { api } from "../api/client";
+import AdminCoupons from "./AdminCoupons";
+import AdminUserManagement from "./AdminUserManagement";
 
 interface AdminDashboardProps {
   products: Product[];
   ordersCount: number;
+  currentUserId: string;
 }
 
 interface Analytics {
@@ -21,14 +24,7 @@ interface Analytics {
   rentTrends: { month: string; rentals: number; revenue: number }[];
 }
 
-export default function AdminDashboard({ products, ordersCount }: AdminDashboardProps) {
-  // System control configs
-  const [platformFee, setPlatformFee] = useState(15);
-  const [enableTryOn, setEnableTryOn] = useState(true);
-  const [enableAiStylist, setEnableAiStylist] = useState(true);
-  const [securityPct, setSecurityPct] = useState(25);
-  const [successMsg, setSuccessMsg] = useState<string | null>(null);
-
+export default function AdminDashboard({ products, ordersCount, currentUserId }: AdminDashboardProps) {
   const [stats, setStats] = useState<Analytics | null>(null);
   const [statsError, setStatsError] = useState<string | null>(null);
 
@@ -38,12 +34,6 @@ export default function AdminDashboard({ products, ordersCount }: AdminDashboard
       .then(setStats)
       .catch((err) => setStatsError(err?.message || "Could not load analytics."));
   }, []);
-
-  const handleSaveSettings = () => {
-    // These toggles are UI-only: there is no settings service behind them yet.
-    setSuccessMsg("Saved locally — platform settings are not yet persisted server-side.");
-    setTimeout(() => setSuccessMsg(null), 3500);
-  };
 
   return (
     <div className="bg-[#F8F6F2] min-h-screen py-10 px-6 animate-fadeIn">
@@ -186,94 +176,19 @@ export default function AdminDashboard({ products, ordersCount }: AdminDashboard
             </div>
           </div>
 
-          {/* Right Column: Platform Configuration Settings */}
+          {/* Right column: coupon administration. This replaced a "Platform
+              Parameters" panel whose fee/deposit inputs and feature toggles
+              were wired to nothing — no settings service exists to store them,
+              so the panel could only ever pretend to save. */}
           <div className="lg:col-span-4 space-y-6">
-            <div className="bg-white border border-[#DADADA] rounded-[32px] p-6 space-y-5 shadow-sm text-xs">
-              <h3 className="text-xs font-sans uppercase tracking-widest font-bold text-[#1C1C1C] border-b border-[#DADADA] pb-3 flex items-center gap-1.5">
-                <Settings className="w-4 h-4 text-[#D4AF37]" /> Platform Parameters
-              </h3>
-
-              {successMsg && (
-                <div className="bg-green-50 border border-green-200 text-green-800 p-3 rounded-lg flex items-center gap-1">
-                  <Check className="w-4 h-4" /> {successMsg}
-                </div>
-              )}
-
-              {/* Commission input */}
-              <div className="space-y-1.5">
-                <label className="block text-[10px] text-[#6B6B6B] font-bold uppercase">Platform Fee Commission (%)</label>
-                <div className="flex gap-2">
-                  <input
-                    id="admin-fee-input"
-                    type="number"
-                    value={platformFee}
-                    onChange={(e) => setPlatformFee(Number(e.target.value))}
-                    className="w-full bg-[#FAF9F6] border border-[#DADADA] rounded-lg p-2.5 font-mono font-bold"
-                  />
-                  <span className="bg-gray-100 px-3.5 flex items-center rounded-lg border border-[#DADADA] font-bold">%</span>
-                </div>
-              </div>
-
-              {/* Security deposit percentage */}
-              <div className="space-y-1.5">
-                <label className="block text-[10px] text-[#6B6B6B] font-bold uppercase">Default Security Deposit Rate (%)</label>
-                <div className="flex gap-2">
-                  <input
-                    id="admin-deposit-input"
-                    type="number"
-                    value={securityPct}
-                    onChange={(e) => setSecurityPct(Number(e.target.value))}
-                    className="w-full bg-[#FAF9F6] border border-[#DADADA] rounded-lg p-2.5 font-mono font-bold"
-                  />
-                  <span className="bg-gray-100 px-3.5 flex items-center rounded-lg border border-[#DADADA] font-bold">%</span>
-                </div>
-              </div>
-
-              {/* Feature Flags */}
-              <div className="space-y-4 pt-4 border-t border-[#DADADA]">
-                <h4 className="text-[10px] text-[#1C1C1C] font-bold uppercase tracking-wider">Feature Flags Status</h4>
-                
-                <div className="flex justify-between items-center">
-                  <div>
-                    <span className="font-bold text-[#1C1C1C]">Gemini 3.5 AI Stylist</span>
-                    <p className="text-[10px] text-[#6B6B6B]">Enables conversational look generation.</p>
-                  </div>
-                  <button
-                    id="flag-stylist-toggle"
-                    onClick={() => setEnableAiStylist(!enableAiStylist)}
-                    className="text-[#303030] hover:text-black transition"
-                  >
-                    {enableAiStylist ? <ToggleRight className="w-8 h-8" /> : <ToggleLeft className="w-8 h-8 text-gray-300" />}
-                  </button>
-                </div>
-
-                <div className="flex justify-between items-center">
-                  <div>
-                    <span className="font-bold text-[#1C1C1C]">AI Virtual Try-On Studio</span>
-                    <p className="text-[10px] text-[#6B6B6B]">Enables face mesh alignment overlays.</p>
-                  </div>
-                  <button
-                    id="flag-tryon-toggle"
-                    onClick={() => setEnableTryOn(!enableTryOn)}
-                    className="text-[#303030] hover:text-black transition"
-                  >
-                    {enableTryOn ? <ToggleRight className="w-8 h-8" /> : <ToggleLeft className="w-8 h-8 text-gray-300" />}
-                  </button>
-                </div>
-              </div>
-
-              <button
-                id="admin-save-btn"
-                onClick={handleSaveSettings}
-                className="w-full bg-[#303030] hover:bg-black text-white text-[10px] font-sans font-bold uppercase tracking-widest py-3.5 rounded-xl transition"
-              >
-                Apply Parameters
-              </button>
-            </div>
+            <AdminCoupons />
           </div>
-
         </div>
 
+        {/* Member directory, full width — the table needs the room. */}
+        <div className="mt-10">
+          <AdminUserManagement currentUserId={currentUserId} />
+        </div>
       </div>
     </div>
   );

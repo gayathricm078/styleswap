@@ -346,7 +346,13 @@ export default function App() {
     }
 
     if (currentRole === "admin") {
-      return <AdminDashboard products={products} ordersCount={orders.length} />;
+      return (
+        <AdminDashboard
+          products={products}
+          ordersCount={orders.length}
+          currentUserId={userProfile?.id ?? ""}
+        />
+      );
     }
 
     switch (activeView) {
