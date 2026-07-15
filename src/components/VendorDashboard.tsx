@@ -20,7 +20,7 @@ export default function VendorDashboard({
   // Add item form state
   const [name, setName] = useState("");
   const [brand, setBrand] = useState("COS Premium");
-  const [category, setCategory] = useState("Women");
+  const [category, setCategory] = useState<Product["category"]>("Women");
   const [rentalPrice, setRentalPrice] = useState(35);
   const [securityDeposit, setSecurityDeposit] = useState(100);
   const [sizes, setSizes] = useState<string[]>(["S", "M"]);
@@ -233,7 +233,7 @@ export default function VendorDashboard({
                     <select
                       id="vendor-category-select"
                       value={category}
-                      onChange={(e) => setCategory(e.target.value)}
+                      onChange={(e) => setCategory(e.target.value as Product["category"])}
                       className="w-full bg-[#FAF9F6] border border-[#DADADA] rounded-xl p-3 focus:outline-none"
                     >
                       <option value="Women">Women</option>

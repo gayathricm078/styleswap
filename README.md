@@ -1,20 +1,50 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
-</div>
+# StyleSwap — frontend
 
-# Run and deploy your AI Studio app
+A fashion-rental marketplace UI: browse and rent designer clothing and jewelry,
+with customer, vendor, and admin views.
 
-This contains everything you need to run your app locally.
+**This is the frontend only.** The backend was removed and will be rebuilt. See
+[API_CONTRACT.md](API_CONTRACT.md) for the spec the new backend must satisfy.
 
-View your app in AI Studio: https://ai.studio/apps/b8be4cc1-9f9f-46a4-888e-c82390683e07
+## Run
 
-## Run Locally
+```bash
+npm install
+npm run dev      # http://localhost:5173
+```
 
-**Prerequisites:**  Node.js
+No environment variables and no database are needed to run the UI.
 
+## State of things
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+All data lives in React state, seeded from [src/data.ts](src/data.ts), and resets
+on refresh. Nothing persists.
+
+Login is not real: [WelcomeLogin.tsx](src/components/WelcomeLogin.tsx) matches
+your email against three demo personas and **does not check the password**. Any
+email logs you in as a customer.
+
+| Persona | Email | Lands on |
+|---|---|---|
+| Victoria Fontaine | `victoria@styleswap.com` | Customer portal |
+| Atelier COS Resell | `cos@styleswap.com` | Vendor workspace |
+| System Administrator | `admin@styleswap.com` | Admin dashboard |
+
+The six AI features still issue their `fetch` calls, which now fail with no
+server to answer them:
+
+| Feature | Without a backend |
+|---|---|
+| Semantic search (Browse) | Degrades cleanly to client-side substring matching |
+| Virtual try-on | Shows the product image plus canned fit commentary |
+| Size recommendation | Falls back to size M |
+| AI Studio / vendor image generation | Error banner, no image |
+| AI Stylist | Error banner, no outfit |
+| Return damage scan | Throws; the return flow is broken |
+
+## Stack
+
+React 19, Vite 6, TypeScript, Tailwind 4, `lucide-react`, `motion`.
+
+`src/types.ts` holds the shared domain types and is the reference for the
+rebuild.
