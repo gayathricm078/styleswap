@@ -56,11 +56,15 @@ Real, and backed by Postgres: accounts and login (hashed passwords, JWT),
 products, reviews, cart, wishlist, orders, checkout, coupons, notifications,
 addresses, and the admin analytics figures.
 
+The admin dashboard (`admin@styleswap.com`) covers analytics, order
+fulfilment, catalog delisting, discount codes, and member roles — all against
+Postgres.
+
 Not real yet:
 
 - **Payments.** Choosing "Razorpay (Online)" records the choice; no money moves.
-- **Admin platform settings.** The toggles on the admin dashboard are UI-only —
-  there's no settings service behind them, and the page says so.
+- **Platform settings.** No settings service exists, so the fee/deposit/feature
+  panel was removed rather than left pretending to save.
 - **Virtual try-on compositing.** The AI writes a fit review; the image shown
   is the product photo, not a composite of you wearing it.
 - **Delivery dates** are free text on the product (`"Tomorrow"`), not scheduling.

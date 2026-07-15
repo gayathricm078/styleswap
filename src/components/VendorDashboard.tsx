@@ -386,7 +386,13 @@ export default function VendorDashboard({
                         ))}
                       </div>
 
-                      <div className="flex gap-2 justify-end pt-2 border-t border-[#DADADA]/50">
+                      {/* "Accept" used to send status "Approved", which is not
+                          one of the seven states the schema allows, so the
+                          request 500'd. Dispatching is the real next state. */}
+                      <div className="flex gap-2 justify-end items-center pt-2 border-t border-[#DADADA]/50">
+                        <span className="text-[10px] text-[#6B6B6B] mr-auto uppercase tracking-wider">
+                          Status: <strong className="text-[#1C1C1C]">{ord.status}</strong>
+                        </span>
                         <button
                           id={`vendor-order-reject-${ord.id}`}
                           onClick={() => onUpdateOrderStatus(ord.id, "Rejected")}
@@ -396,10 +402,10 @@ export default function VendorDashboard({
                         </button>
                         <button
                           id={`vendor-order-approve-${ord.id}`}
-                          onClick={() => onUpdateOrderStatus(ord.id, "Approved")}
+                          onClick={() => onUpdateOrderStatus(ord.id, "Out For Delivery")}
                           className="px-4 py-1.5 bg-[#303030] hover:bg-black text-white rounded-full text-[10px] font-bold uppercase tracking-wider transition"
                         >
-                          Accept
+                          Dispatch
                         </button>
                       </div>
                     </div>

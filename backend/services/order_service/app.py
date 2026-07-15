@@ -27,6 +27,17 @@ from shared.service import (  # noqa: E402
 
 app = create_app("order")
 
+# Must stay in step with the CHECK constraint on orders.orders.status.
+VALID_ORDER_STATUSES = {
+    "Booked",
+    "Out For Delivery",
+    "Currently Rented",
+    "Returned",
+    "Under Maintenance",
+    "Pending Approval",
+    "Rejected",
+}
+
 
 def _load_items(order_id: str) -> list[dict]:
     return db.query("SELECT * FROM orders.order_items WHERE order_id = %s ORDER BY id", (order_id,))
@@ -204,6 +215,13 @@ def update_status(order_id: str):
     """
     body = json_body()
     require_fields(body, "status")
+
+    # Validate here rather than letting the column's CHECK constraint raise —
+    # an unknown status is a client error (400), not a server failure (500).
+    if body["status"] not in VALID_ORDER_STATUSES:
+        raise ApiError(
+            f"status must be one of: {', '.join(sorted(VALID_ORDER_STATUSES))}", 400
+        )
 
     row = db.query_one("SELECT * FROM orders.orders WHERE order_id = %s", (order_id,))
     if not row:

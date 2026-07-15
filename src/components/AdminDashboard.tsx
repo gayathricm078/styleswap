@@ -1,14 +1,18 @@
 import React, { useEffect, useState } from "react";
 import { ShieldCheck, BarChart3, Activity } from "lucide-react";
-import { Product } from "../types";
+import { Order, Product } from "../types";
 import { api } from "../api/client";
 import AdminCoupons from "./AdminCoupons";
+import AdminOrders from "./AdminOrders";
+import AdminProducts from "./AdminProducts";
 import AdminUserManagement from "./AdminUserManagement";
 
 interface AdminDashboardProps {
   products: Product[];
   ordersCount: number;
   currentUserId: string;
+  orders: Order[];
+  onRefresh: () => void | Promise<void>;
 }
 
 interface Analytics {
@@ -24,16 +28,32 @@ interface Analytics {
   rentTrends: { month: string; rentals: number; revenue: number }[];
 }
 
-export default function AdminDashboard({ products, ordersCount, currentUserId }: AdminDashboardProps) {
+export default function AdminDashboard({
+  products,
+  ordersCount,
+  currentUserId,
+  orders,
+  onRefresh,
+}: AdminDashboardProps) {
   const [stats, setStats] = useState<Analytics | null>(null);
   const [statsError, setStatsError] = useState<string | null>(null);
 
-  useEffect(() => {
+  const loadStats = () =>
     api
       .getAnalytics()
       .then(setStats)
       .catch((err) => setStatsError(err?.message || "Could not load analytics."));
+
+  useEffect(() => {
+    loadStats();
   }, []);
+
+  /** After a write, pull both the parent's data and the KPI aggregates —
+   *  deleting a listing or moving an order changes the figures above. */
+  const refreshAll = async () => {
+    await onRefresh();
+    await loadStats();
+  };
 
   return (
     <div className="bg-[#F8F6F2] min-h-screen py-10 px-6 animate-fadeIn">
@@ -182,11 +202,13 @@ export default function AdminDashboard({ products, ordersCount, currentUserId }:
               so the panel could only ever pretend to save. */}
           <div className="lg:col-span-4 space-y-6">
             <AdminCoupons />
+            <AdminProducts products={products} onChanged={refreshAll} />
           </div>
         </div>
 
-        {/* Member directory, full width — the table needs the room. */}
-        <div className="mt-10">
+        {/* Tables run full width — they need the room. */}
+        <div className="mt-10 space-y-10">
+          <AdminOrders orders={orders} onChanged={refreshAll} />
           <AdminUserManagement currentUserId={currentUserId} />
         </div>
       </div>

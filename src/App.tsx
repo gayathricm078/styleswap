@@ -351,6 +351,8 @@ export default function App() {
           products={products}
           ordersCount={orders.length}
           currentUserId={userProfile?.id ?? ""}
+          orders={orders}
+          onRefresh={() => loadUserData(currentRole)}
         />
       );
     }
