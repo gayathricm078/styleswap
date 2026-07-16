@@ -1,0 +1,18 @@
+# Local IDM-VTON engine ONLY. Needs a CUDA GPU (~16-24GB VRAM). Do not install
+# on a CPU-only box. Install these IN ADDITION to requirements.txt, then clone
+# the official repo and set IDM_VTON_REPO + VTON_CHECKPOINT_DIR.
+#
+#   git clone https://github.com/yisol/IDM-VTON
+#   huggingface-cli download yisol/IDM-VTON --local-dir <VTON_CHECKPOINT_DIR>
+#
+# Pin torch to your CUDA version (example is cu121).
+torch>=2.0 --index-url https://download.pytorch.org/whl/cu121
+torchvision
+diffusers>=0.25
+transformers>=4.36
+accelerate
+onnxruntime-gpu
+opencv-python-headless
+scipy
+einops
+# The repo also vendors detectron2 + densepose + human-parsing; follow its README.

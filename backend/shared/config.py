@@ -55,6 +55,11 @@ VTON_ENABLED = os.getenv("VTON_ENABLED", "true").strip().lower() == "true"
 # feature works but rate-limits fast. Get one free: https://huggingface.co/settings/tokens
 HF_TOKEN = os.getenv("HF_TOKEN", "").strip()
 
+# The standalone VTON inference service (vton-service/). When set, ai-service
+# delegates compositing to it over HTTP instead of calling the model inline —
+# so there is one home for try-on, swappable between remote and local engines.
+VTON_SERVICE_URL = os.getenv("VTON_SERVICE_URL", "http://127.0.0.1:8009").strip()
+
 # Service registry. The gateway proxies to these; services call each other
 # through them too (order -> catalog, for example).
 PORTS = {

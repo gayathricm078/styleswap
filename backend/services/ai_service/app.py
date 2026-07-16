@@ -11,9 +11,7 @@ them directly. Two deliberate departures from the old Node server:
 """
 import base64
 import json
-import os
 import sys
-import tempfile
 import time
 from pathlib import Path
 from urllib.parse import quote
@@ -269,88 +267,75 @@ Respond with a JSON array exactly matching:
     return jsonify([r for r in data if r.get("productId") in valid][:6])
 
 
-def _fetch_to_temp(src: str, suffix: str = ".jpg") -> str:
-    """Materialise a data: URL or an http(s) URL as a temp file path.
+def _composite_tryon(person_src: str, garment_src: str, garment_desc: str) -> str:
+    """Composite the person into the garment via the standalone VTON service.
 
-    gradio_client uploads files, so both the person photo (a data URL from the
-    browser) and the garment (a remote URL) have to hit disk first.
+    Fetches both images to bytes, posts them to vton-service (which runs the
+    IDM-VTON model behind its own engine), and returns the result as a data URL.
+    The heavy lifting — model loading, the seg/parse/pose/inference pipeline,
+    queueing — lives in that service, not here.
     """
-    fd, path = tempfile.mkstemp(suffix=suffix)
-    os.close(fd)
+    # Resolve both inputs to raw bytes. person_src is a data URL (browser photo)
+    # or an avatar URL; garment_src is the product's flat image URL.
+    person_bytes = _read_image_bytes(person_src, "person")
+    garment_bytes = _read_image_bytes(garment_src, "garment")
 
+    files = {
+        "person_image": ("person.png", person_bytes, "image/png"),
+        "garment_image": ("garment.jpg", garment_bytes, "image/jpeg"),
+    }
+    data = {"garment_description": garment_desc}
+
+    try:
+        # ?wait=true so this stays a single synchronous call from the frontend's
+        # point of view; the service does the queue/poll internally.
+        resp = requests.post(
+            f"{config.VTON_SERVICE_URL}/virtual-tryon?wait=true",
+            files=files, data=data, timeout=280,
+        )
+    except requests.RequestException as exc:
+        raise ApiError(
+            f"The try-on service is unreachable ({exc}). Is vton-service running?", 503
+        ) from exc
+
+    if resp.status_code != 202 and resp.status_code != 200:
+        # The service already returns actionable messages (quota, bad image…).
+        try:
+            msg = resp.json().get("error") or resp.text
+        except ValueError:
+            msg = resp.text
+        raise ApiError(msg or f"Try-on failed (HTTP {resp.status_code})", resp.status_code if resp.status_code >= 400 else 502)
+
+    payload = resp.json()
+    url = payload.get("generated_image_url")
+    if not url:
+        raise ApiError("The try-on service returned no image", 502)
+
+    # The URL is relative to the service (/outputs/...). Fetch it and inline it
+    # as a data URL, so the browser never needs to reach the service directly.
+    fetch_url = url if url.startswith("http") else f"{config.VTON_SERVICE_URL}{url}"
+    try:
+        img = requests.get(fetch_url, timeout=60)
+    except requests.RequestException as exc:
+        raise ApiError(f"Could not fetch the generated image: {exc}", 502) from exc
+    if img.status_code != 200:
+        raise ApiError(f"Could not fetch the generated image (HTTP {img.status_code})", 502)
+
+    mime = img.headers.get("Content-Type", "image/png").split(";")[0]
+    return f"data:{mime};base64,{base64.b64encode(img.content).decode()}"
+
+
+def _read_image_bytes(src: str, kind: str) -> bytes:
+    """Resolve a data URL or http(s) URL to bytes for forwarding."""
     if src.startswith("data:"):
         header, _, payload = src.partition(",")
-        raw = base64.b64decode(payload) if ";base64" in header else payload.encode()
-        Path(path).write_bytes(raw)
-        return path
-
-    resp = requests.get(src, headers={"User-Agent": "StyleSwap/1.0"}, timeout=60)
-    if resp.status_code != 200:
-        raise ApiError(f"Could not load the garment image (HTTP {resp.status_code})", 502)
-    Path(path).write_bytes(resp.content)
-    return path
-
-
-def _composite_tryon(person_src: str, garment_src: str, garment_desc: str) -> str:
-    """Put the person into the garment. Returns a data URL.
-
-    Uses IDM-VTON on a free Hugging Face ZeroGPU Space: no key, but queued and
-    slow (~30-90s), and with no uptime guarantee. Both inputs matter — a
-    headshot or a garment photographed on a model produce garbage, which is why
-    avatars are full-body and products carry a separate flat tryon_image.
-    """
-    try:
-        from gradio_client import Client, handle_file
-    except ImportError:
-        raise ApiError("gradio_client is not installed: pip install -r backend/requirements.txt", 503)
-
-    person_path = garment_path = None
-    try:
-        person_path = _fetch_to_temp(person_src, ".png")
-        garment_path = _fetch_to_temp(garment_src, ".jpg")
-
-        # A token lifts the ZeroGPU quota off the shared anonymous per-IP pool,
-        # which a few try-ons exhaust, onto the account's own allowance.
-        client = Client(config.VTON_SPACE, token=config.HF_TOKEN or None, verbose=False)
-        result = client.predict(
-            dict={"background": handle_file(person_path), "layers": [], "composite": None},
-            garm_img=handle_file(garment_path),
-            garment_des=garment_desc,
-            is_checked=True,       # auto-generate the garment mask
-            is_checked_crop=True,  # crop-and-restore keeps faces sharper
-            denoise_steps=30,
-            seed=42,
-            api_name="/tryon",
-        )
-    except ApiError:
-        raise
-    except Exception as exc:
-        app.logger.exception("Try-on compositing failed")
-        msg = str(exc)
-        if "quota" in msg.lower() or "gpu" in msg.lower():
-            hint = (
-                "add a free Hugging Face token to backend/.env (HF_TOKEN)"
-                if not config.HF_TOKEN
-                else "wait for your Hugging Face quota to reset"
-            )
-            raise ApiError(
-                f"The free try-on GPU is out of quota right now — {hint}.", 503
-            )
-        raise ApiError(f"The fitting room is busy right now: {exc}", 503)
-    finally:
-        for p in (person_path, garment_path):
-            if p:
-                try:
-                    os.unlink(p)
-                except OSError:
-                    pass
-
-    out = result[0] if isinstance(result, (list, tuple)) else result
-    if not out or not Path(out).exists():
-        raise ApiError("The try-on model returned no image", 502)
-
-    data = Path(out).read_bytes()
-    return f"data:image/png;base64,{base64.b64encode(data).decode()}"
+        return base64.b64decode(payload) if ";base64" in header else payload.encode()
+    if src.startswith(("http://", "https://")):
+        resp = requests.get(src, headers={"User-Agent": "StyleSwap/1.0"}, timeout=60)
+        if resp.status_code != 200:
+            raise ApiError(f"Could not load the {kind} image (HTTP {resp.status_code})", 502)
+        return resp.content
+    raise ApiError(f"Unsupported {kind} image reference", 400)
 
 
 @app.post("/tryon")

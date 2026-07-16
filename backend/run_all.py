@@ -30,6 +30,11 @@ SERVICES = [
     ("gateway", "gateway/app.py"),
 ]
 
+# The standalone try-on service lives outside backend/ and launches as a module
+# from its own directory. Started here only if present, so the stack still runs
+# for anyone who hasn't set it up. ai-service degrades to a clear 503 without it.
+VTON_DIR = BACKEND_ROOT.parent / "vton-service"
+
 COLORS = ["\033[36m", "\033[32m", "\033[33m", "\033[35m", "\033[34m",
           "\033[91m", "\033[92m", "\033[93m", "\033[95m"]
 RESET = "\033[0m"
@@ -73,10 +78,18 @@ def main() -> int:
     signal.signal(signal.SIGINT, shutdown)
     signal.signal(signal.SIGTERM, shutdown)
 
-    for i, (name, rel_path) in enumerate(SERVICES):
+    # (name, argv, cwd) for every process to launch.
+    launches: list[tuple[str, list[str], str]] = [
+        (name, [sys.executable, str(BACKEND_ROOT / rel)], str(BACKEND_ROOT))
+        for name, rel in SERVICES
+    ]
+    if (VTON_DIR / "app" / "main.py").exists():
+        launches.append(("vton", [sys.executable, "-m", "app.main"], str(VTON_DIR)))
+
+    for i, (name, argv, cwd) in enumerate(launches):
         proc = subprocess.Popen(
-            [sys.executable, str(BACKEND_ROOT / rel_path)],
-            cwd=str(BACKEND_ROOT),
+            argv,
+            cwd=cwd,
             env=env,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
@@ -87,7 +100,8 @@ def main() -> int:
         threading.Thread(
             target=pump, args=(name, COLORS[i % len(COLORS)], proc), daemon=True
         ).start()
-        print(f"  started {name:<13} :{PORTS[name]}", flush=True)
+        port = PORTS.get(name, "8009" if name == "vton" else "?")
+        print(f"  started {name:<13} :{port}", flush=True)
 
     print(f"\n  Gateway    http://localhost:{PORTS['gateway']}")
     print(f"  Health     http://localhost:{PORTS['gateway']}/api/health")

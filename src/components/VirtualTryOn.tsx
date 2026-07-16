@@ -41,11 +41,13 @@ export default function VirtualTryOn({ products, onViewChange }: VirtualTryOnPro
   // Full-body shots, deliberately. The try-on model needs a body to dress —
   // fed a headshot it smears the garment across the face. These were portraits
   // before, which both failed and taught users to upload the wrong thing.
+  // Portrait crops forced to 600x800 — the try-on service enforces a 512x512
+  // minimum on both sides, and a landscape crop fails it.
   const avatars = [
-    { name: "Sofia", gender: "Female", url: "https://images.unsplash.com/photo-1483985988355-763728e1935b?auto=format&fit=crop&q=80&w=600" },
-    { name: "Helena", gender: "Female", url: "https://images.unsplash.com/photo-1485231183945-fffde7cc051e?auto=format&fit=crop&q=80&w=600" },
-    { name: "Charlotte", gender: "Female", url: "https://images.unsplash.com/photo-1496747611176-843222e1e57c?auto=format&fit=crop&q=80&w=600" },
-    { name: "Alistair", gender: "Male", url: "https://images.unsplash.com/photo-1516257984-b1b4d707412e?auto=format&fit=crop&q=80&w=600" }
+    { name: "Sofia", gender: "Female", url: "https://images.unsplash.com/photo-1483985988355-763728e1935b?auto=format&fit=crop&w=600&h=800&q=80" },
+    { name: "Helena", gender: "Female", url: "https://images.unsplash.com/photo-1485231183945-fffde7cc051e?auto=format&fit=crop&w=600&h=800&q=80" },
+    { name: "Charlotte", gender: "Female", url: "https://images.unsplash.com/photo-1496747611176-843222e1e57c?auto=format&fit=crop&w=600&h=800&q=80" },
+    { name: "Alistair", gender: "Male", url: "https://images.unsplash.com/photo-1516257984-b1b4d707412e?auto=format&fit=crop&w=600&h=800&q=80" }
   ];
 
   const stopCamera = () => {
