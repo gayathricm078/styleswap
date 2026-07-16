@@ -200,7 +200,10 @@ export default function Navbar({
                 <input
                   id="nav-search-input"
                   type="text"
-                  placeholder="Search collections, sarees, luxury heels..."
+                  // Name things the archive actually stocks. The old copy
+                  // advertised "sarees", of which there are none, so the first
+                  // search a customer tries returns nothing.
+                  placeholder="Search gowns, blazers, earrings…"
                   value={searchQuery}
                   onChange={(e) => {
                     setSearchQuery(e.target.value);

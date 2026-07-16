@@ -277,9 +277,9 @@ PRODUCTS = [
         "sub_category": "Rompers",
         "brand": "COS Kids Premium",
         "description": "A soft, hypoallergenic romper woven in breathable organic linen. Features wooden buttons down the front, adjustable cross-back shoulder straps, and easy snap closures at the inseam. Beautiful minimalist neutral kidswear.",
-        "image": "https://images.unsplash.com/photo-1519689680058-324335c77eb6?auto=format&fit=crop&q=80&w=600",
+        "image": "https://images.unsplash.com/photo-1522771930-78848d9293e8?auto=format&fit=crop&q=80&w=600",
         "gallery": [
-            "https://images.unsplash.com/photo-1519689680058-324335c77eb6?auto=format&fit=crop&q=80&w=600"
+            "https://images.unsplash.com/photo-1522771930-78848d9293e8?auto=format&fit=crop&q=80&w=600"
         ],
         "sizes": ["6-12M", "12-18M", "2Y", "3Y"],
         "colors": [{"name": "Oat Oatmeal", "hex": "#E9E3D8"}],

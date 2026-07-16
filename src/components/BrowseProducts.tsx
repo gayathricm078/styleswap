@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import { Search, Heart, Star, SlidersHorizontal, ArrowUpDown, Check, X, RotateCcw } from "lucide-react";
 import { Product } from "../types";
 import { CATEGORIES } from "../data";
@@ -20,6 +20,15 @@ export default function BrowseProducts({
   initialSearchQuery,
 }: BrowseProductsProps) {
   const [searchQuery, setSearchQuery] = useState(initialSearchQuery);
+
+  // useState only reads the prop on mount. Without this, searching from the
+  // navbar while already on this page changed the prop but not the state, so
+  // the search silently did nothing — it only worked when arriving from Home,
+  // which remounts the component.
+  useEffect(() => {
+    setSearchQuery(initialSearchQuery);
+  }, [initialSearchQuery]);
+
   const [selectedCategory, setSelectedCategory] = useState<string>("");
   const [selectedBrand, setSelectedBrand] = useState<string>("");
   const [selectedOccasion, setSelectedOccasion] = useState<string>("");
