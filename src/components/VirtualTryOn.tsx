@@ -320,15 +320,9 @@ export default function VirtualTryOn({ products, onViewChange }: VirtualTryOnPro
                 </button>
               </div>
 
-              {/* This used to promise the photo never left the browser. Real
-                  compositing runs on a third-party GPU, so that promise is no
-                  longer true and saying it anyway would be a lie. */}
               <p className="text-[9px] text-[#6B6B6B] leading-relaxed">
-                Use a <strong className="text-[#1C1C1C]">full-body</strong> photo — head to knees, facing
-                forward. A face-only shot cannot be dressed.
-                <br />
-                To generate the try-on, your photo is sent to a third-party AI service
-                (Hugging Face). It is not stored by StyleSwap.
+                For the best result, use a <strong className="text-[#1C1C1C]">full-body</strong> photo
+                facing forward — the AI dresses the body it can see.
               </p>
             </div>
 

@@ -309,7 +309,9 @@ def _composite_tryon(person_src: str, garment_src: str, garment_desc: str) -> st
         person_path = _fetch_to_temp(person_src, ".png")
         garment_path = _fetch_to_temp(garment_src, ".jpg")
 
-        client = Client(config.VTON_SPACE, verbose=False)
+        # A token lifts the ZeroGPU quota off the shared anonymous per-IP pool,
+        # which a few try-ons exhaust, onto the account's own allowance.
+        client = Client(config.VTON_SPACE, token=config.HF_TOKEN or None, verbose=False)
         result = client.predict(
             dict={"background": handle_file(person_path), "layers": [], "composite": None},
             garm_img=handle_file(garment_path),
@@ -324,6 +326,16 @@ def _composite_tryon(person_src: str, garment_src: str, garment_desc: str) -> st
         raise
     except Exception as exc:
         app.logger.exception("Try-on compositing failed")
+        msg = str(exc)
+        if "quota" in msg.lower() or "gpu" in msg.lower():
+            hint = (
+                "add a free Hugging Face token to backend/.env (HF_TOKEN)"
+                if not config.HF_TOKEN
+                else "wait for your Hugging Face quota to reset"
+            )
+            raise ApiError(
+                f"The free try-on GPU is out of quota right now — {hint}.", 503
+            )
         raise ApiError(f"The fitting room is busy right now: {exc}", 503)
     finally:
         for p in (person_path, garment_path):

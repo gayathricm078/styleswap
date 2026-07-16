@@ -44,12 +44,16 @@ GEMINI_IMAGE_MODEL = os.getenv("GEMINI_IMAGE_MODEL", "gemini-3.1-flash-lite-imag
 IMAGE_PROVIDER = os.getenv("IMAGE_PROVIDER", "pollinations").strip().lower()
 POLLINATIONS_MODEL = os.getenv("POLLINATIONS_MODEL", "flux").strip()
 
-# Virtual try-on. A free Hugging Face ZeroGPU Space — no key, but queued and
-# slow (~30-90s), with no uptime guarantee. It needs a full-body person photo
-# and a FLAT garment image; a headshot, or a garment shot on a model, both
-# produce nonsense.
+# Virtual try-on. A free Hugging Face ZeroGPU Space — queued and slow
+# (~30-90s). It needs a full-body person photo and a FLAT garment image; a
+# headshot, or a garment shot on a model, both produce nonsense.
 VTON_SPACE = os.getenv("VTON_SPACE", "yisol/IDM-VTON").strip()
 VTON_ENABLED = os.getenv("VTON_ENABLED", "true").strip().lower() == "true"
+
+# A free token lifts the ZeroGPU quota from the tiny anonymous per-IP allowance
+# (which runs out after a few try-ons) to a real per-account one. Without it the
+# feature works but rate-limits fast. Get one free: https://huggingface.co/settings/tokens
+HF_TOKEN = os.getenv("HF_TOKEN", "").strip()
 
 # Service registry. The gateway proxies to these; services call each other
 # through them too (order -> catalog, for example).
