@@ -1,5 +1,5 @@
-import React, { useState } from "react";
-import { Camera, Upload, Sparkles, Image as ImageIcon, Check, Download, Share2, Sparkle } from "lucide-react";
+import React, { useEffect, useRef, useState } from "react";
+import { Camera, Upload, Sparkles, Image as ImageIcon, Check, Download, Share2, Sparkle, X, AlertCircle } from "lucide-react";
 import { Product } from "../types";
 import { api, ApiError } from "../api/client";
 
@@ -8,12 +8,27 @@ interface VirtualTryOnProps {
   onViewChange: (view: string) => void;
 }
 
+/** Reject anything that isn't a real image, or is big enough to hang the tab. */
+const MAX_UPLOAD_BYTES = 8 * 1024 * 1024;
+
 export default function VirtualTryOn({ products, onViewChange }: VirtualTryOnProps) {
   const [selectedAvatar, setSelectedAvatar] = useState<string>("Sofia");
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(products[1] || null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [compositeResult, setCompositeResult] = useState<string | null>(null);
   const [tryOnReport, setTryOnReport] = useState<{ fitReview: string; toneHarmony: string; styleScore: string } | null>(null);
+
+  // A photo the user uploaded or captured. Held as a data URL in component
+  // state only — it is never uploaded anywhere, which is what "private photo"
+  // in the blurb has to mean for it to be true.
+  const [customPhoto, setCustomPhoto] = useState<string | null>(null);
+  const [mediaError, setMediaError] = useState<string | null>(null);
+
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const [cameraReady, setCameraReady] = useState(false);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const avatars = [
     { name: "Sofia", gender: "Female", url: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=300" },
@@ -22,14 +37,123 @@ export default function VirtualTryOn({ products, onViewChange }: VirtualTryOnPro
     { name: "Alistair", gender: "Male", url: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&q=80&w=300" }
   ];
 
+  const stopCamera = () => {
+    streamRef.current?.getTracks().forEach((t) => t.stop());
+    streamRef.current = null;
+    setCameraReady(false);
+    setCameraOpen(false);
+  };
+
+  // Releasing the camera on unmount is not optional — the OS keeps the webcam
+  // light on until every track is stopped.
+  useEffect(() => {
+    return () => {
+      streamRef.current?.getTracks().forEach((t) => t.stop());
+    };
+  }, []);
+
+  const handleOpenCamera = async () => {
+    setMediaError(null);
+
+    // getUserMedia only exists on a secure origin (https or localhost).
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setMediaError("Your browser blocks camera access on this page. Cameras need HTTPS or localhost.");
+      return;
+    }
+
+    setCameraOpen(true);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "user", width: { ideal: 720 }, height: { ideal: 960 } },
+        audio: false,
+      });
+      streamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play();
+      }
+      setCameraReady(true);
+    } catch (err: any) {
+      // Name the actual reason — "camera failed" tells the user nothing about
+      // whether to click Allow, close Zoom, or plug a camera in.
+      const reason =
+        err?.name === "NotAllowedError"
+          ? "Camera permission was denied. Allow it in your browser's address bar, then try again."
+          : err?.name === "NotFoundError"
+          ? "No camera found on this device."
+          : err?.name === "NotReadableError"
+          ? "Your camera is already in use by another app."
+          : `Could not start the camera: ${err?.message || err?.name || "unknown error"}`;
+      setMediaError(reason);
+      stopCamera();
+    }
+  };
+
+  const handleCapture = () => {
+    const video = videoRef.current;
+    if (!video || !cameraReady) return;
+
+    const canvas = document.createElement("canvas");
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    // The preview is mirrored so it reads like a mirror; flip back on capture
+    // so the saved photo isn't reversed.
+    ctx.translate(canvas.width, 0);
+    ctx.scale(-1, 1);
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    setCustomPhoto(canvas.toDataURL("image/jpeg", 0.9));
+    setSelectedAvatar("Your photo");
+    setCompositeResult(null);
+    stopCamera();
+  };
+
+  const handleFilePicked = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setMediaError(null);
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      setMediaError("That file isn't an image. Pick a JPG, PNG, or WEBP.");
+      return;
+    }
+    if (file.size > MAX_UPLOAD_BYTES) {
+      setMediaError(`That image is ${(file.size / 1024 / 1024).toFixed(1)}MB — keep it under 8MB.`);
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      setCustomPhoto(String(reader.result));
+      setSelectedAvatar("Your photo");
+      setCompositeResult(null);
+    };
+    reader.onerror = () => setMediaError("Could not read that file.");
+    reader.readAsDataURL(file);
+
+    // Reset so picking the same file twice still fires onChange.
+    e.target.value = "";
+  };
+
+  const clearCustomPhoto = () => {
+    setCustomPhoto(null);
+    setSelectedAvatar("Sofia");
+    setCompositeResult(null);
+  };
+
   const handleGenerateTryOn = async () => {
     if (!selectedProduct) return;
     setIsProcessing(true);
     setCompositeResult(null);
     setTryOnReport(null);
 
-    const activeAvatarObj = avatars.find((a) => a.name === selectedAvatar);
-    const activeAvatarUrl = activeAvatarObj?.url || "";
+    // A captured/uploaded photo is a data URL and can be megabytes; the API
+    // only uses avatarUrl for prompt context, so send the label instead of
+    // pushing the user's photo to the server.
+    const activeAvatarUrl = customPhoto ? "" : avatars.find((a) => a.name === selectedAvatar)?.url || "";
 
     try {
       const data = await api.tryOn({
@@ -64,7 +188,7 @@ export default function VirtualTryOn({ products, onViewChange }: VirtualTryOnPro
     }
   };
 
-  const activeAvatarUrl = avatars.find((a) => a.name === selectedAvatar)?.url;
+  const activeAvatarUrl = customPhoto || avatars.find((a) => a.name === selectedAvatar)?.url;
 
   return (
     <div className="bg-[#F8F6F2] min-h-screen py-10 px-6 animate-fadeIn">
@@ -99,7 +223,38 @@ export default function VirtualTryOn({ products, onViewChange }: VirtualTryOnPro
               </h3>
               
               <div className="grid grid-cols-4 gap-3">
-                {avatars.map((av) => (
+                {/* The user's own photo takes the first slot once it exists. */}
+                {customPhoto && (
+                  <div className="relative">
+                    <button
+                      id="tryon-avatar-custom"
+                      onClick={() => {
+                        setSelectedAvatar("Your photo");
+                        setCompositeResult(null);
+                      }}
+                      className={`relative w-full rounded-xl overflow-hidden border-2 transition ${
+                        selectedAvatar === "Your photo"
+                          ? "border-[#D4AF37] scale-105"
+                          : "border-transparent opacity-70 hover:opacity-100"
+                      }`}
+                    >
+                      <img src={customPhoto} alt="Your photo" className="w-full h-12 object-cover" />
+                      <span className="absolute bottom-0 inset-x-0 bg-black/60 text-[8px] text-white py-0.5 text-center truncate">
+                        You
+                      </span>
+                    </button>
+                    <button
+                      id="tryon-clear-custom"
+                      onClick={clearCustomPhoto}
+                      title="Remove your photo"
+                      className="absolute -top-1.5 -right-1.5 bg-[#1C1C1C] text-white rounded-full p-0.5 hover:bg-black transition"
+                    >
+                      <X className="w-2.5 h-2.5" />
+                    </button>
+                  </div>
+                )}
+
+                {avatars.slice(0, customPhoto ? 3 : 4).map((av) => (
                   <button
                     key={av.name}
                     id={`tryon-avatar-${av.name}`}
@@ -115,24 +270,95 @@ export default function VirtualTryOn({ products, onViewChange }: VirtualTryOnPro
                 ))}
               </div>
 
-              {/* Upload & Camera Buttons */}
+              {mediaError && (
+                <div className="flex items-start gap-2 bg-[#FAF9F6] border border-red-200 rounded-xl px-3 py-2.5 text-[10px] text-[#6B6B6B] leading-relaxed">
+                  <AlertCircle className="w-3.5 h-3.5 text-red-500 shrink-0 mt-px" />
+                  {mediaError}
+                </div>
+              )}
+
+              {/* Upload & Camera */}
               <div className="grid grid-cols-2 gap-3 pt-2">
+                {/* The real file picker. Hidden, driven by the styled button. */}
+                <input
+                  ref={fileInputRef}
+                  id="tryon-file-input"
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  onChange={handleFilePicked}
+                  className="hidden"
+                />
                 <button
                   id="tryon-upload-btn"
-                  onClick={() => alert("Photo selector simulation triggered. Supported formats: JPG, PNG.")}
+                  onClick={() => fileInputRef.current?.click()}
                   className="flex items-center justify-center gap-1.5 py-2.5 border border-[#DADADA] rounded-xl text-[10px] font-sans font-bold uppercase tracking-wider text-[#1C1C1C] bg-[#FAF9F6] hover:border-black transition"
                 >
                   <Upload className="w-3.5 h-3.5" /> Upload Photo
                 </button>
                 <button
                   id="tryon-camera-btn"
-                  onClick={() => alert("Webcam permissions initialized. Place your face centered inside the frame.")}
+                  onClick={handleOpenCamera}
                   className="flex items-center justify-center gap-1.5 py-2.5 border border-[#DADADA] rounded-xl text-[10px] font-sans font-bold uppercase tracking-wider text-[#1C1C1C] bg-[#FAF9F6] hover:border-black transition"
                 >
                   <Camera className="w-3.5 h-3.5" /> Capture Live
                 </button>
               </div>
+
+              <p className="text-[9px] text-[#6B6B6B] leading-relaxed">
+                Your photo stays in this browser tab — it is never uploaded to StyleSwap.
+              </p>
             </div>
+
+            {/* Camera modal */}
+            {cameraOpen && (
+              <div
+                className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4"
+                role="dialog"
+                aria-modal="true"
+                aria-label="Capture a photo"
+              >
+                <div className="bg-white rounded-[24px] p-5 max-w-md w-full space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs font-sans uppercase tracking-widest font-bold text-[#1C1C1C]">
+                      Capture live
+                    </h4>
+                    <button
+                      id="tryon-camera-close"
+                      onClick={stopCamera}
+                      className="text-[#6B6B6B] hover:text-[#1C1C1C] transition"
+                      aria-label="Close camera"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  <div className="relative bg-[#1C1C1C] rounded-2xl overflow-hidden aspect-[3/4]">
+                    <video
+                      ref={videoRef}
+                      playsInline
+                      muted
+                      // Mirrored so it behaves like a mirror; the capture flips
+                      // it back so the stored photo isn't reversed.
+                      className="w-full h-full object-cover -scale-x-100"
+                    />
+                    {!cameraReady && (
+                      <div className="absolute inset-0 flex items-center justify-center text-[11px] text-white/70">
+                        Waiting for camera permission…
+                      </div>
+                    )}
+                  </div>
+
+                  <button
+                    id="tryon-capture-btn"
+                    onClick={handleCapture}
+                    disabled={!cameraReady}
+                    className="w-full bg-[#303030] text-white text-[10px] font-sans font-bold uppercase tracking-widest py-3 rounded-full hover:bg-black transition disabled:opacity-40 flex items-center justify-center gap-1.5"
+                  >
+                    <Camera className="w-3.5 h-3.5" /> {cameraReady ? "Capture photo" : "Starting camera…"}
+                  </button>
+                </div>
+              </div>
+            )}
 
             {/* Step 2: Choose Garment */}
             <div className="bg-white border border-[#DADADA] rounded-[24px] p-6 space-y-4 shadow-sm">
