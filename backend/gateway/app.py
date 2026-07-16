@@ -85,6 +85,11 @@ def proxy(_sub: str):
         if k.lower() not in HOP_BY_HOP and k.lower() != "host"
     }
 
+    # Try-on runs on a queued free GPU and regularly takes 30-90s; image
+    # generation is slower than a database read too. A flat 60s would cut both
+    # off mid-flight and surface as a confusing 503.
+    timeout = 240 if service == "ai" else 60
+
     try:
         resp = requests.request(
             method=request.method,
@@ -92,7 +97,7 @@ def proxy(_sub: str):
             headers=headers,
             params=request.args,
             data=request.get_data(),
-            timeout=60,
+            timeout=timeout,
         )
     except requests.RequestException as exc:
         app.logger.error("%s-service unreachable: %s", service, exc)

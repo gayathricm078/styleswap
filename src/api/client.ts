@@ -262,17 +262,25 @@ export const api = {
       { method: "POST", body: { query } }
     ),
 
+  /** Composites the person into the garment. Slow (~30-90s) — it runs on a
+   *  queued free GPU. `composited` says whether the returned image is a real
+   *  try-on or just the product photo; never label it a result without it. */
   tryOn: (params: {
-    avatarUrl: string;
+    personImage: string; // data URL (uploaded/captured) or a full-body avatar URL
+    tryonImage: string | null | undefined; // the product's flat garment shot
     productUrl: string;
     productName: string;
     avatarName: string;
     productBrand: string;
   }) =>
-    request<{ imageUrl: string; fitReview: string; toneHarmony: string; styleScore: string }>(
-      "/ai/tryon",
-      { method: "POST", body: params }
-    ),
+    request<{
+      imageUrl: string;
+      composited: boolean;
+      error: string | null;
+      fitReview: string;
+      toneHarmony: string;
+      styleScore: string;
+    }>("/ai/tryon", { method: "POST", body: params }),
 
   generateImage: (prompt: string, aspectRatio = "1:1") =>
     request<{ imageUrl: string; isFallback: boolean }>("/ai/generate-image", {

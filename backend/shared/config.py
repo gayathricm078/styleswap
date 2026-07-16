@@ -31,8 +31,25 @@ JWT_ALGORITHM = "HS256"
 JWT_EXPIRES_MINUTES = int(os.getenv("JWT_EXPIRES_MINUTES", "720"))
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
-GEMINI_TEXT_MODEL = os.getenv("GEMINI_TEXT_MODEL", "gemini-2.0-flash")
-GEMINI_IMAGE_MODEL = os.getenv("GEMINI_IMAGE_MODEL", "gemini-2.0-flash-exp-image-generation")
+# gemini-2.0-flash has no free-tier quota on a fresh key (429, "limit: 0") and
+# gemini-3.5-flash is chronically 503. This one is verified working and free.
+GEMINI_TEXT_MODEL = os.getenv("GEMINI_TEXT_MODEL", "gemini-3.1-flash-lite")
+GEMINI_IMAGE_MODEL = os.getenv("GEMINI_IMAGE_MODEL", "gemini-3.1-flash-lite-image")
+
+# Which backend draws pictures. Gemini's text models have free-tier quota but
+# its image models have none — every one returns 429 "limit: 0" on a free key —
+# so the default is a provider that is actually free.
+#   pollinations : no key, no signup. Community service, no uptime guarantee.
+#   gemini       : requires billing enabled on the Google Cloud project.
+IMAGE_PROVIDER = os.getenv("IMAGE_PROVIDER", "pollinations").strip().lower()
+POLLINATIONS_MODEL = os.getenv("POLLINATIONS_MODEL", "flux").strip()
+
+# Virtual try-on. A free Hugging Face ZeroGPU Space — no key, but queued and
+# slow (~30-90s), with no uptime guarantee. It needs a full-body person photo
+# and a FLAT garment image; a headshot, or a garment shot on a model, both
+# produce nonsense.
+VTON_SPACE = os.getenv("VTON_SPACE", "yisol/IDM-VTON").strip()
+VTON_ENABLED = os.getenv("VTON_ENABLED", "true").strip().lower() == "true"
 
 # Service registry. The gateway proxies to these; services call each other
 # through them too (order -> catalog, for example).

@@ -9,13 +9,18 @@ them directly. Two deliberate departures from the old Node server:
    renders its own offline state.
 2. /search ignores any client-supplied catalog and reads from catalog-service.
 """
+import base64
 import json
+import os
 import sys
+import tempfile
 import time
 from pathlib import Path
+from urllib.parse import quote
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+import requests  # noqa: E402
 from flask import jsonify  # noqa: E402
 
 from shared import auth, config  # noqa: E402
@@ -264,10 +269,86 @@ Respond with a JSON array exactly matching:
     return jsonify([r for r in data if r.get("productId") in valid][:6])
 
 
+def _fetch_to_temp(src: str, suffix: str = ".jpg") -> str:
+    """Materialise a data: URL or an http(s) URL as a temp file path.
+
+    gradio_client uploads files, so both the person photo (a data URL from the
+    browser) and the garment (a remote URL) have to hit disk first.
+    """
+    fd, path = tempfile.mkstemp(suffix=suffix)
+    os.close(fd)
+
+    if src.startswith("data:"):
+        header, _, payload = src.partition(",")
+        raw = base64.b64decode(payload) if ";base64" in header else payload.encode()
+        Path(path).write_bytes(raw)
+        return path
+
+    resp = requests.get(src, headers={"User-Agent": "StyleSwap/1.0"}, timeout=60)
+    if resp.status_code != 200:
+        raise ApiError(f"Could not load the garment image (HTTP {resp.status_code})", 502)
+    Path(path).write_bytes(resp.content)
+    return path
+
+
+def _composite_tryon(person_src: str, garment_src: str, garment_desc: str) -> str:
+    """Put the person into the garment. Returns a data URL.
+
+    Uses IDM-VTON on a free Hugging Face ZeroGPU Space: no key, but queued and
+    slow (~30-90s), and with no uptime guarantee. Both inputs matter — a
+    headshot or a garment photographed on a model produce garbage, which is why
+    avatars are full-body and products carry a separate flat tryon_image.
+    """
+    try:
+        from gradio_client import Client, handle_file
+    except ImportError:
+        raise ApiError("gradio_client is not installed: pip install -r backend/requirements.txt", 503)
+
+    person_path = garment_path = None
+    try:
+        person_path = _fetch_to_temp(person_src, ".png")
+        garment_path = _fetch_to_temp(garment_src, ".jpg")
+
+        client = Client(config.VTON_SPACE, verbose=False)
+        result = client.predict(
+            dict={"background": handle_file(person_path), "layers": [], "composite": None},
+            garm_img=handle_file(garment_path),
+            garment_des=garment_desc,
+            is_checked=True,       # auto-generate the garment mask
+            is_checked_crop=True,  # crop-and-restore keeps faces sharper
+            denoise_steps=30,
+            seed=42,
+            api_name="/tryon",
+        )
+    except ApiError:
+        raise
+    except Exception as exc:
+        app.logger.exception("Try-on compositing failed")
+        raise ApiError(f"The fitting room is busy right now: {exc}", 503)
+    finally:
+        for p in (person_path, garment_path):
+            if p:
+                try:
+                    os.unlink(p)
+                except OSError:
+                    pass
+
+    out = result[0] if isinstance(result, (list, tuple)) else result
+    if not out or not Path(out).exists():
+        raise ApiError("The try-on model returned no image", 502)
+
+    data = Path(out).read_bytes()
+    return f"data:image/png;base64,{base64.b64encode(data).decode()}"
+
+
 @app.post("/tryon")
 @auth.require_auth
 def tryon():
     b = json_body()
+    person_image = b.get("personImage")   # data URL, or a full-body avatar URL
+    garment_image = b.get("tryonImage")   # the product's flat garment shot
+
+    # Written review. Cheap and always available, so do it regardless.
     prompt = f"""You are the virtual dressing room assistant at "StyleSwap".
 Client "{b.get("avatarName") or "Sofia"}" is trying on "{b.get("productName")}"
 from "{b.get("productBrand") or "the StyleSwap archives"}".
@@ -276,13 +357,38 @@ Respond with JSON exactly matching:
 {{"fitReview": string, "toneHarmony": string, "styleScore": string like "96/100"}}
 fitReview should cover drape, silhouette length, and fit guidance.
 toneHarmony should give colour-theory advice for the garment's hues."""
-    data = generate_json(prompt)
+    try:
+        data = generate_json(prompt)
+    except ApiError as exc:
+        data = {"fitReview": f"Fit commentary unavailable: {exc.message}", "toneHarmony": "—", "styleScore": "—"}
 
-    # No compositing happens — imageUrl echoes the product image back, exactly
-    # as the old server did. The UI shows it beside the written review.
+    # Composite only when we have both halves. `composited` tells the UI whether
+    # it may call the image a try-on result — without it the old UI labelled the
+    # plain product photo "AI Synthesis Result", which was simply false.
+    composited = False
+    image_url = b.get("productUrl")
+    error = None
+
+    if person_image and garment_image:
+        try:
+            image_url = _composite_tryon(
+                person_image,
+                garment_image,
+                f"{b.get('productName')} by {b.get('productBrand') or 'StyleSwap'}",
+            )
+            composited = True
+        except ApiError as exc:
+            error = exc.message
+    elif not garment_image:
+        error = "This piece has no flat garment photo, so it cannot be tried on."
+    elif not person_image:
+        error = "Choose a model or add your own full-body photo first."
+
     return jsonify(
         {
-            "imageUrl": b.get("productUrl"),
+            "imageUrl": image_url,
+            "composited": composited,
+            "error": error,
             "fitReview": data.get("fitReview"),
             "toneHarmony": data.get("toneHarmony"),
             "styleScore": data.get("styleScore") or "95/100",
@@ -290,45 +396,87 @@ toneHarmony should give colour-theory advice for the garment's hues."""
     )
 
 
+# The UI's aspect options -> pixel sizes.
+ASPECT_SIZES = {
+    "1:1": (768, 768),
+    "3:4": (672, 896),
+    "4:3": (896, 672),
+    "16:9": (1024, 576),
+    "9:16": (576, 1024),
+}
+
+
+def _generate_via_pollinations(styled: str, aspect: str) -> tuple[bytes, str]:
+    """Free, keyless image generation. Returns (bytes, mime)."""
+    width, height = ASPECT_SIZES.get(aspect, ASPECT_SIZES["1:1"])
+    url = (
+        f"https://image.pollinations.ai/prompt/{quote(styled, safe='')}"
+        f"?width={width}&height={height}&nologo=true&model={config.POLLINATIONS_MODEL}"
+    )
+    try:
+        # Pollinations 403s any request without a User-Agent.
+        resp = requests.get(url, headers={"User-Agent": "StyleSwap/1.0"}, timeout=180)
+    except requests.RequestException as exc:
+        raise ApiError(f"Image service unreachable: {exc}", 502) from exc
+
+    if resp.status_code != 200:
+        raise ApiError(f"Image service returned HTTP {resp.status_code}", 502)
+
+    mime = resp.headers.get("Content-Type", "image/jpeg").split(";")[0]
+    if not mime.startswith("image/"):
+        raise ApiError("Image service returned something that isn't an image", 502)
+    return resp.content, mime
+
+
+def _generate_via_gemini(styled: str) -> tuple[bytes, str]:
+    """Gemini image generation. Needs billing — free-tier keys get 429 on every
+    image model, which is why this is not the default."""
+    from google.genai import types
+
+    response = _generate(
+        config.GEMINI_IMAGE_MODEL,
+        styled,
+        types.GenerateContentConfig(response_modalities=["TEXT", "IMAGE"]),
+    )
+    for candidate in response.candidates or []:
+        for part in candidate.content.parts or []:
+            if getattr(part, "inline_data", None) and part.inline_data.data:
+                raw = part.inline_data.data
+                data = base64.b64decode(raw) if isinstance(raw, str) else raw
+                return data, (part.inline_data.mime_type or "image/png")
+    raise ApiError("The image model returned no image data", 502)
+
+
 @app.post("/generate-image")
 @auth.require_auth
 def generate_image():
-    from google.genai import types
-
     b = json_body()
     prompt = (b.get("prompt") or "").strip()
     if not prompt:
         raise ApiError("prompt is required", 400)
 
+    aspect = b.get("aspectRatio") or "1:1"
     styled = (
         f"High fashion archival catalog photograph. Subject: {prompt}. "
         "Premium aesthetic, neutral off-white architectural background, "
         "studio lighting, editorial composition."
     )
 
-    try:
-        response = _generate(
-            config.GEMINI_IMAGE_MODEL,
-            styled,
-            types.GenerateContentConfig(response_modalities=["TEXT", "IMAGE"]),
-        )
-    except ApiError:
-        raise
-    except Exception as exc:
-        app.logger.exception("Image generation failed")
-        raise ApiError(f"Image generation failed: {exc}", 502)
+    if config.IMAGE_PROVIDER == "gemini":
+        data, mime = _generate_via_gemini(styled)
+    else:
+        data, mime = _generate_via_pollinations(styled, aspect)
 
-    import base64
-
-    for candidate in response.candidates or []:
-        for part in candidate.content.parts or []:
-            if getattr(part, "inline_data", None) and part.inline_data.data:
-                raw = part.inline_data.data
-                encoded = raw if isinstance(raw, str) else base64.b64encode(raw).decode()
-                mime = part.inline_data.mime_type or "image/png"
-                return jsonify({"imageUrl": f"data:{mime};base64,{encoded}", "isFallback": False})
-
-    raise ApiError("The image model returned no image data", 502)
+    # A data URL matches the contract the frontend already reads, keeps the
+    # browser on one origin (no CORS), and makes the download button work.
+    encoded = base64.b64encode(data).decode()
+    return jsonify(
+        {
+            "imageUrl": f"data:{mime};base64,{encoded}",
+            "isFallback": False,
+            "provider": config.IMAGE_PROVIDER,
+        }
+    )
 
 
 if __name__ == "__main__":

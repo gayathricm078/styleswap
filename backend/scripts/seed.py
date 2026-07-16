@@ -98,10 +98,10 @@ def seed_products(conn) -> int:
             """
             INSERT INTO catalog.products (
                 product_id, name, category, sub_category, brand, description, image,
-                gallery, sizes, colors, rental_price, security_deposit, vendor_name,
+                tryon_image, gallery, sizes, colors, rental_price, security_deposit, vendor_name,
                 vendor_user_id, vendor_verified, rating, reviews_count, badge, status,
                 delivery_date)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (product_id) DO NOTHING
             """,
             (
@@ -112,6 +112,7 @@ def seed_products(conn) -> int:
                 p["brand"],
                 p["description"],
                 p["image"],
+                p.get("tryon_image"),
                 json.dumps(p["gallery"]),
                 json.dumps(p["sizes"]),
                 json.dumps(p["colors"]),

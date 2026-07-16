@@ -12,8 +12,11 @@ interface VirtualTryOnProps {
 const MAX_UPLOAD_BYTES = 8 * 1024 * 1024;
 
 export default function VirtualTryOn({ products, onViewChange }: VirtualTryOnProps) {
+  // Only garments carrying a flat product shot can be dressed onto a body.
+  const tryableProducts = products.filter((p) => Boolean(p.tryonImage));
+
   const [selectedAvatar, setSelectedAvatar] = useState<string>("Sofia");
-  const [selectedProduct, setSelectedProduct] = useState<Product | null>(products[1] || null);
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(tryableProducts[0] || null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [compositeResult, setCompositeResult] = useState<string | null>(null);
   const [tryOnReport, setTryOnReport] = useState<{ fitReview: string; toneHarmony: string; styleScore: string } | null>(null);
@@ -24,17 +27,25 @@ export default function VirtualTryOn({ products, onViewChange }: VirtualTryOnPro
   const [customPhoto, setCustomPhoto] = useState<string | null>(null);
   const [mediaError, setMediaError] = useState<string | null>(null);
 
+  // Whether the image on the right is genuinely the person wearing the garment,
+  // or just the product photo. The UI must never claim the former without this.
+  const [isComposited, setIsComposited] = useState(false);
+  const [tryOnNote, setTryOnNote] = useState<string | null>(null);
+
   const [cameraOpen, setCameraOpen] = useState(false);
   const [cameraReady, setCameraReady] = useState(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
+  // Full-body shots, deliberately. The try-on model needs a body to dress —
+  // fed a headshot it smears the garment across the face. These were portraits
+  // before, which both failed and taught users to upload the wrong thing.
   const avatars = [
-    { name: "Sofia", gender: "Female", url: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=300" },
-    { name: "Helena", gender: "Female", url: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&q=80&w=300" },
-    { name: "Charlotte", gender: "Female", url: "https://images.unsplash.com/photo-1438761681033-6461ffad8d80?auto=format&fit=crop&q=80&w=300" },
-    { name: "Alistair", gender: "Male", url: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&q=80&w=300" }
+    { name: "Sofia", gender: "Female", url: "https://images.unsplash.com/photo-1483985988355-763728e1935b?auto=format&fit=crop&q=80&w=600" },
+    { name: "Helena", gender: "Female", url: "https://images.unsplash.com/photo-1485231183945-fffde7cc051e?auto=format&fit=crop&q=80&w=600" },
+    { name: "Charlotte", gender: "Female", url: "https://images.unsplash.com/photo-1496747611176-843222e1e57c?auto=format&fit=crop&q=80&w=600" },
+    { name: "Alistair", gender: "Male", url: "https://images.unsplash.com/photo-1516257984-b1b4d707412e?auto=format&fit=crop&q=80&w=600" }
   ];
 
   const stopCamera = () => {
@@ -149,15 +160,18 @@ export default function VirtualTryOn({ products, onViewChange }: VirtualTryOnPro
     setIsProcessing(true);
     setCompositeResult(null);
     setTryOnReport(null);
+    setIsComposited(false);
+    setTryOnNote(null);
 
-    // A captured/uploaded photo is a data URL and can be megabytes; the API
-    // only uses avatarUrl for prompt context, so send the label instead of
-    // pushing the user's photo to the server.
-    const activeAvatarUrl = customPhoto ? "" : avatars.find((a) => a.name === selectedAvatar)?.url || "";
+    // The person image is the user's own photo when they gave one, otherwise
+    // the selected full-body avatar. Either way the server needs the pixels to
+    // composite — a name is not enough.
+    const personImage = customPhoto || avatars.find((a) => a.name === selectedAvatar)?.url || "";
 
     try {
       const data = await api.tryOn({
-        avatarUrl: activeAvatarUrl,
+        personImage,
+        tryonImage: selectedProduct.tryonImage,
         productUrl: selectedProduct.image,
         productName: selectedProduct.name,
         avatarName: selectedAvatar,
@@ -165,6 +179,8 @@ export default function VirtualTryOn({ products, onViewChange }: VirtualTryOnPro
       });
 
       setCompositeResult(data.imageUrl);
+      setIsComposited(data.composited);
+      setTryOnNote(data.error);
       setTryOnReport({
         fitReview: data.fitReview,
         toneHarmony: data.toneHarmony,
@@ -172,14 +188,14 @@ export default function VirtualTryOn({ products, onViewChange }: VirtualTryOnPro
       });
     } catch (err) {
       console.error(err);
-      // Show the garment, but say plainly that the written review is missing
-      // rather than inventing praise for it.
+      // Show the garment, but never call it a try-on result.
       setCompositeResult(selectedProduct.image);
+      setIsComposited(false);
+      setTryOnNote(
+        err instanceof ApiError ? err.message : "The fitting room is unavailable right now."
+      );
       setTryOnReport({
-        fitReview:
-          err instanceof ApiError
-            ? `Fitting room commentary unavailable: ${err.message}`
-            : "Fitting room commentary is unavailable right now.",
+        fitReview: "—",
         toneHarmony: "—",
         styleScore: "—",
       });
@@ -304,8 +320,15 @@ export default function VirtualTryOn({ products, onViewChange }: VirtualTryOnPro
                 </button>
               </div>
 
+              {/* This used to promise the photo never left the browser. Real
+                  compositing runs on a third-party GPU, so that promise is no
+                  longer true and saying it anyway would be a lie. */}
               <p className="text-[9px] text-[#6B6B6B] leading-relaxed">
-                Your photo stays in this browser tab — it is never uploaded to StyleSwap.
+                Use a <strong className="text-[#1C1C1C]">full-body</strong> photo — head to knees, facing
+                forward. A face-only shot cannot be dressed.
+                <br />
+                To generate the try-on, your photo is sent to a third-party AI service
+                (Hugging Face). It is not stored by StyleSwap.
               </p>
             </div>
 
@@ -367,14 +390,18 @@ export default function VirtualTryOn({ products, onViewChange }: VirtualTryOnPro
                 Choose Style Swap Garment
               </h3>
 
+              {/* Only garments with a flat product shot can be tried on. A vase
+                  or a handbag has nothing to dress a body in, and offering them
+                  would just produce nonsense. */}
               <div className="grid grid-cols-2 gap-3 max-h-72 overflow-y-auto pr-1">
-                {products.slice(0, 8).map((prod) => (
+                {tryableProducts.map((prod) => (
                   <button
                     key={prod.id}
                     id={`tryon-garment-${prod.id}`}
                     onClick={() => {
                       setSelectedProduct(prod);
                       setCompositeResult(null);
+                      setTryOnNote(null);
                     }}
                     className={`border rounded-xl p-2.5 flex items-center gap-3 transition text-left ${selectedProduct?.id === prod.id ? "border-[#D4AF37] bg-[#D4AF37]/5" : "border-[#DADADA] bg-white hover:border-[#1C1C1C]"}`}
                   >
@@ -388,6 +415,12 @@ export default function VirtualTryOn({ products, onViewChange }: VirtualTryOnPro
                   </button>
                 ))}
               </div>
+
+              {tryableProducts.length === 0 && (
+                <p className="text-[10px] text-[#6B6B6B] text-center py-4">
+                  No garments in the archive have a flat product photo yet, so none can be tried on.
+                </p>
+              )}
             </div>
 
             {/* Step 3: Action */}
@@ -423,39 +456,70 @@ export default function VirtualTryOn({ products, onViewChange }: VirtualTryOnPro
                 <div className="bg-white border border-[#DADADA] rounded-[32px] p-6 shadow-sm">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-center">
                     
-                    {/* Before/After Comparative View */}
+                    {/* Before / after. The right-hand label is driven by
+                        isComposited: when the model didn't run, this is just
+                        the product photo and must be named as such. Calling it
+                        an "AI Synthesis Result" regardless is what the old
+                        version did, and it was false. */}
                     <div className="space-y-3">
-                      <p className="text-[10px] font-sans uppercase tracking-widest font-bold text-[#6B6B6B] text-center">Original Face Input</p>
+                      <p className="text-[10px] font-sans uppercase tracking-widest font-bold text-[#6B6B6B] text-center">
+                        {isComposited ? "Your photo" : "Selected model"}
+                      </p>
                       <div className="w-full h-80 rounded-t-[100px] rounded-b-[20px] overflow-hidden border border-[#DADADA] bg-slate-100">
-                        <img src={activeAvatarUrl} alt="source face" className="w-full h-full object-cover" />
+                        <img src={activeAvatarUrl} alt="the person being dressed" className="w-full h-full object-cover" />
                       </div>
                     </div>
 
                     <div className="space-y-3">
                       <div className="flex justify-center items-center gap-1.5">
-                        <p className="text-[10px] font-sans uppercase tracking-widest font-bold text-[#D4AF37] text-center">AI Synthesis Result</p>
-                        <Sparkle className="w-3.5 h-3.5 text-[#D4AF37]" />
+                        <p className={`text-[10px] font-sans uppercase tracking-widest font-bold text-center ${isComposited ? "text-[#D4AF37]" : "text-[#6B6B6B]"}`}>
+                          {isComposited ? "AI try-on result" : "Garment photo — not a try-on"}
+                        </p>
+                        {isComposited && <Sparkle className="w-3.5 h-3.5 text-[#D4AF37]" />}
                       </div>
-                      <div className="w-full h-80 rounded-t-[100px] rounded-b-[20px] overflow-hidden border-2 border-[#D4AF37] bg-slate-100 relative shadow-lg">
-                        <img src={compositeResult} alt="composite look" className="w-full h-full object-cover" />
-                        <span className="absolute bottom-4 left-4 bg-black/80 backdrop-blur-sm text-white px-3 py-1 rounded text-[9px] font-mono uppercase tracking-widest font-bold">
-                          ✦ Try-on complete
-                        </span>
+                      <div className={`w-full h-80 rounded-t-[100px] rounded-b-[20px] overflow-hidden bg-slate-100 relative ${isComposited ? "border-2 border-[#D4AF37] shadow-lg" : "border border-[#DADADA]"}`}>
+                        <img
+                          src={compositeResult}
+                          alt={isComposited ? "you wearing the garment, generated" : "the garment's product photo"}
+                          className="w-full h-full object-cover"
+                        />
+                        {isComposited && (
+                          <span className="absolute bottom-4 left-4 bg-black/80 backdrop-blur-sm text-white px-3 py-1 rounded text-[9px] font-mono uppercase tracking-widest font-bold">
+                            ✦ AI generated
+                          </span>
+                        )}
                       </div>
+                      {isComposited && (
+                        <p className="text-[9px] text-[#6B6B6B] text-center leading-relaxed">
+                          An AI approximation — fabric, fit, and colour will differ from the real garment.
+                        </p>
+                      )}
                     </div>
 
                   </div>
 
+                  {tryOnNote && (
+                    <div className="mt-5 flex items-start gap-2 bg-[#FAF9F6] border border-[#DADADA] rounded-2xl px-4 py-3 text-[10px] text-[#6B6B6B] leading-relaxed">
+                      <AlertCircle className="w-3.5 h-3.5 text-[#D4AF37] shrink-0 mt-px" />
+                      {tryOnNote}
+                    </div>
+                  )}
+
                   {/* AI Styling & Drape Feedback Report */}
                   {tryOnReport && (
                     <div className="mt-8 pt-6 border-t border-[#DADADA] grid grid-cols-1 md:grid-cols-3 gap-6 text-left animate-slideDown">
+                      {/* "Fit index" implied this was measured against the
+                          customer's body. It isn't — the language model only
+                          ever sees the garment's name and brand, never the
+                          photo. It is an opinion of the piece, so name it one. */}
                       <div className="bg-[#FAF9F6] p-4 rounded-2xl border border-[#DADADA]/50 space-y-1">
-                        <span className="text-[9px] uppercase tracking-wider font-bold text-[#D4AF37]">Haute Fitting Score</span>
-                        <div className="text-2xl font-serif font-bold text-[#1C1C1C] flex items-center gap-1">
+                        <span className="text-[9px] uppercase tracking-wider font-bold text-[#D4AF37]">Style Score</span>
+                        <div className="text-2xl font-serif font-bold text-[#1C1C1C]">
                           <span>{tryOnReport.styleScore}</span>
-                          <span className="text-xs text-[#6B6B6B] font-sans font-normal">fit index</span>
                         </div>
-                        <p className="text-[10px] text-[#6B6B6B]">Highly recommended tailored drape symmetry.</p>
+                        <p className="text-[10px] text-[#6B6B6B]">
+                          The stylist's view of the piece — not a measurement of your fit.
+                        </p>
                       </div>
                       <div className="bg-[#FAF9F6] p-4 rounded-2xl border border-[#DADADA]/50 space-y-1 col-span-2">
                         <span className="text-[9px] uppercase tracking-wider font-bold text-[#1C1C1C]">Atelier Silhouette Review</span>

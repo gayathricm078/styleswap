@@ -73,6 +73,7 @@ PRODUCTS = [
         "brand": "L’Aura Bridal",
         "description": "An elegant, backless halter-neck gown draped in 100% heavy mulberry silk. Subtle cowl neckline, fluid court train, and seamless tailoring create an ethereal silhouette for the modern bride. Sourced sustainably with clean-washing certificates.",
         "image": "https://images.unsplash.com/photo-1594552072238-b8a33785b261?auto=format&fit=crop&q=80&w=600",
+        "tryon_image": "https://image.pollinations.ai/prompt/flat%20lay%20product%20photograph%20of%20an%20ivory%20silk%20halter%20neck%20wedding%20gown%2C%20garment%20laid%20flat%20and%20centred%20on%20a%20pure%20white%20background%2C%20isolated%20cutout%2C%20no%20person%2C%20no%20model%2C%20no%20mannequin%2C%20ecommerce%20catalog%20still%20life?width=768&height=1024&nologo=true&model=flux&seed=11",
         "gallery": [
             "https://images.unsplash.com/photo-1594552072238-b8a33785b261?auto=format&fit=crop&q=80&w=600",
             "https://images.unsplash.com/photo-1518049362265-d5b2a6467637?auto=format&fit=crop&q=80&w=600",
@@ -101,6 +102,7 @@ PRODUCTS = [
         "brand": "COS Premium",
         "description": "A tailored oversized blazer woven with a heavy, textured wool-blend bouclé. Features structured shoulders, slim notch lapels, and custom tortoiseshell buttons. Ideal for sophisticated daywear or formal meetings.",
         "image": "https://images.unsplash.com/photo-1539109136881-3be0616acf4b?auto=format&fit=crop&q=80&w=600",
+        "tryon_image": "https://image.pollinations.ai/prompt/flat%20lay%20product%20photograph%20of%20an%20oatmeal%20beige%20textured%20boucle%20blazer%2C%20garment%20laid%20flat%20and%20centred%20on%20a%20pure%20white%20background%2C%20isolated%20cutout%2C%20no%20person%2C%20no%20model%2C%20no%20mannequin%2C%20ecommerce%20catalog%20still%20life?width=768&height=1024&nologo=true&model=flux&seed=2",
         "gallery": [
             "https://images.unsplash.com/photo-1539109136881-3be0616acf4b?auto=format&fit=crop&q=80&w=600"
         ],
@@ -128,6 +130,7 @@ PRODUCTS = [
         "brand": "Mango Man Tailoring",
         "description": "Unstructured double-breasted suit jacket crafted from breathable, luxury Italian flax linen. Features soft shoulders, peak lapels, and dual patch pockets for a relaxed yet highly tailored summer-smart aesthetic.",
         "image": "https://images.unsplash.com/photo-1507679799987-c73779587ccf?auto=format&fit=crop&q=80&w=600",
+        "tryon_image": "https://image.pollinations.ai/prompt/flat%20lay%20product%20photograph%20of%20a%20sand%20coloured%20linen%20double%20breasted%20suit%20jacket%2C%20garment%20laid%20flat%20and%20centred%20on%20a%20pure%20white%20background%2C%20isolated%20cutout%2C%20no%20person%2C%20no%20model%2C%20no%20mannequin%2C%20ecommerce%20catalog%20still%20life?width=768&height=1024&nologo=true&model=flux&seed=13",
         "gallery": [
             "https://images.unsplash.com/photo-1507679799987-c73779587ccf?auto=format&fit=crop&q=80&w=600"
         ],
@@ -155,6 +158,7 @@ PRODUCTS = [
         "brand": "Savoir Jewelry",
         "description": "Brutalist, architectural-inspired drop earrings. Cast in recycled sterling silver and hand-plated in heavy 18-karat yellow gold. Brushed satin finish reflecting subtle light. Ultra-lightweight for comfortable, secure wear.",
         "image": "https://images.unsplash.com/photo-1535632066927-ab7c9ab60908?auto=format&fit=crop&q=80&w=600",
+        "tryon_image": None,  # not wearable
         "gallery": [
             "https://images.unsplash.com/photo-1535632066927-ab7c9ab60908?auto=format&fit=crop&q=80&w=600"
         ],
@@ -179,6 +183,7 @@ PRODUCTS = [
         "brand": "Aesop Atelier",
         "description": "A seamless, architectural handbag crafted from premium vegetable-tanned Italian calf leather. Unlined raw interior with a magnetic snap clasp and a delicate gold embossed stamp. Large enough for a laptop or portfolio.",
         "image": "https://images.unsplash.com/photo-1584917865442-de89df76afd3?auto=format&fit=crop&q=80&w=600",
+        "tryon_image": None,  # not wearable
         "gallery": [
             "https://images.unsplash.com/photo-1584917865442-de89df76afd3?auto=format&fit=crop&q=80&w=600"
         ],
@@ -206,6 +211,7 @@ PRODUCTS = [
         "brand": "Saint Laurent Style",
         "description": "Pointed-toe Chelsea boots crafted in Italy with premium sand-colored suede leather. Elastic side panels, premium leather soles, and a elegant tapered heel that elevates any tailoring outfit.",
         "image": "https://images.unsplash.com/photo-1520639888713-7851133b1ed0?auto=format&fit=crop&q=80&w=600",
+        "tryon_image": None,  # not wearable
         "gallery": [
             "https://images.unsplash.com/photo-1520639888713-7851133b1ed0?auto=format&fit=crop&q=80&w=600"
         ],
@@ -230,6 +236,7 @@ PRODUCTS = [
         "brand": "Studio Minimalist",
         "description": "A gorgeous handmade unglazed sandstone vase with a modern sculptural organic arch form. Captures warm shadow play and elevates luxury living spaces.",
         "image": "https://images.unsplash.com/photo-1612196808214-b8e1d6145a8c?auto=format&fit=crop&q=80&w=600",
+        "tryon_image": None,  # not wearable
         "gallery": [
             "https://images.unsplash.com/photo-1612196808214-b8e1d6145a8c?auto=format&fit=crop&q=80&w=600"
         ],
@@ -254,6 +261,7 @@ PRODUCTS = [
         "brand": "Aesop Home",
         "description": "Ultra-heavy knit throw blanket spun from 100% grade-A Mongolian cashmere. Woven in neutral sand and cream hues with a tactile ribbed border. Impeccable weight and softness for luxurious home styling.",
         "image": "https://images.unsplash.com/photo-1580301762395-21ce84d00bc6?auto=format&fit=crop&q=80&w=600",
+        "tryon_image": None,  # not wearable
         "gallery": [
             "https://images.unsplash.com/photo-1580301762395-21ce84d00bc6?auto=format&fit=crop&q=80&w=600"
         ],
@@ -278,6 +286,7 @@ PRODUCTS = [
         "brand": "COS Kids Premium",
         "description": "A soft, hypoallergenic romper woven in breathable organic linen. Features wooden buttons down the front, adjustable cross-back shoulder straps, and easy snap closures at the inseam. Beautiful minimalist neutral kidswear.",
         "image": "https://images.unsplash.com/photo-1522771930-78848d9293e8?auto=format&fit=crop&q=80&w=600",
+        "tryon_image": "https://image.pollinations.ai/prompt/flat%20lay%20product%20photograph%20of%20an%20oatmeal%20organic%20linen%20child%20romper%2C%20garment%20laid%20flat%20and%20centred%20on%20a%20pure%20white%20background%2C%20isolated%20cutout%2C%20no%20person%2C%20no%20model%2C%20no%20mannequin%2C%20ecommerce%20catalog%20still%20life?width=768&height=1024&nologo=true&model=flux&seed=14",
         "gallery": [
             "https://images.unsplash.com/photo-1522771930-78848d9293e8?auto=format&fit=crop&q=80&w=600"
         ],
@@ -302,6 +311,7 @@ PRODUCTS = [
         "brand": "COS Tailored",
         "description": "A timeless, double-breasted trench coat tailored in high-density water-resistant organic cotton gabardine. Features a removable waist belt, horn-style buttons, deep epaulets, and a rear ventilation storm flap. Perfect layering piece.",
         "image": "https://images.unsplash.com/photo-1617137968427-85924c800a22?auto=format&fit=crop&q=80&w=600",
+        "tryon_image": "https://image.pollinations.ai/prompt/flat%20lay%20product%20photograph%20of%20a%20caramel%20structured%20double%20breasted%20trench%20coat%2C%20garment%20laid%20flat%20and%20centred%20on%20a%20pure%20white%20background%2C%20isolated%20cutout%2C%20no%20person%2C%20no%20model%2C%20no%20mannequin%2C%20ecommerce%20catalog%20still%20life?width=768&height=1024&nologo=true&model=flux&seed=15",
         "gallery": [
             "https://images.unsplash.com/photo-1617137968427-85924c800a22?auto=format&fit=crop&q=80&w=600"
         ],

@@ -41,6 +41,10 @@ export interface Product {
   brand: string;
   description: string;
   image: string; // Arch/Ovals styled via Tailwind
+  /** Flat, isolated shot of the garment on a plain background — not a model
+   *  wearing it. Required by the virtual try-on model. Absent means this
+   *  product cannot be tried on (a vase, a handbag). */
+  tryonImage?: string | null;
   gallery: string[];
   sizes: string[];
   colors: { name: string; hex: string }[];

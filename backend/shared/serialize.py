@@ -45,6 +45,9 @@ def product_json(row: dict, reviews: list[dict] | None = None) -> dict:
         "brand": row["brand"],
         "description": row["description"],
         "image": row["image"],
+        # Present only for garments that can be tried on. The UI uses its
+        # absence to hide the try-on offer entirely.
+        "tryonImage": row.get("tryon_image"),
         "gallery": row["gallery"],
         "sizes": row["sizes"],
         "colors": row["colors"],

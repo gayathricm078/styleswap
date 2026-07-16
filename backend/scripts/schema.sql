@@ -64,6 +64,11 @@ CREATE TABLE IF NOT EXISTS catalog.products (
     brand            TEXT NOT NULL,
     description      TEXT NOT NULL DEFAULT '',
     image            TEXT NOT NULL,
+    -- A flat, isolated shot of the garment on a plain background — NOT a model
+    -- wearing it. The virtual try-on model needs the garment separated from a
+    -- body; fed a lifestyle shot it produces nonsense. NULL means this product
+    -- cannot be tried on, which is correct for a vase or a handbag.
+    tryon_image      TEXT,
     gallery          JSONB NOT NULL DEFAULT '[]'::jsonb,
     sizes            JSONB NOT NULL DEFAULT '[]'::jsonb,
     colors           JSONB NOT NULL DEFAULT '[]'::jsonb,
