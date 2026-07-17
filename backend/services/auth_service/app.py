@@ -23,14 +23,14 @@ DEFAULT_AVATAR = (
 
 def _load_addresses(user_id: str) -> list[dict]:
     return db.query(
-        "SELECT * FROM auth.addresses WHERE user_id = %s ORDER BY is_default DESC, address_id",
+        "SELECT * FROM app_auth.addresses WHERE user_id = %s ORDER BY is_default DESC, address_id",
         (user_id,),
     )
 
 
 def _user_by_email(email: str) -> dict | None:
     return db.query_one(
-        "SELECT * FROM auth.users WHERE lower(email) = lower(%s)", (email,)
+        "SELECT * FROM app_auth.users WHERE lower(email) = lower(%s)", (email,)
     )
 
 
@@ -52,7 +52,7 @@ def register():
     try:
         row = db.execute(
             """
-            INSERT INTO auth.users (user_id, email, password_hash, name, role, profile_pic)
+            INSERT INTO app_auth.users (user_id, email, password_hash, name, role, profile_pic)
             VALUES (%s, %s, %s, %s, 'customer', %s)
             RETURNING *
             """,
@@ -84,7 +84,7 @@ def login():
 @auth.require_auth
 def get_profile():
     uid = auth.current_user_id()
-    row = db.query_one("SELECT * FROM auth.users WHERE user_id = %s", (uid,))
+    row = db.query_one("SELECT * FROM app_auth.users WHERE user_id = %s", (uid,))
     if not row:
         raise ApiError("User not found", 404)
     return jsonify(serialize.user_json(row, _load_addresses(uid)))
@@ -109,7 +109,7 @@ def update_profile():
 
     params.append(uid)
     row = db.execute(
-        f"UPDATE auth.users SET {', '.join(sets)} WHERE user_id = %s RETURNING *",
+        f"UPDATE app_auth.users SET {', '.join(sets)} WHERE user_id = %s RETURNING *",
         tuple(params),
     )
     if not row:
@@ -136,17 +136,17 @@ def create_address():
         # the old one in the same transaction.
         if is_default:
             cur.execute(
-                "UPDATE auth.addresses SET is_default = false WHERE user_id = %s", (uid,)
+                "UPDATE app_auth.addresses SET is_default = false WHERE user_id = %s", (uid,)
             )
         else:
             cur.execute(
-                "SELECT 1 FROM auth.addresses WHERE user_id = %s LIMIT 1", (uid,)
+                "SELECT 1 FROM app_auth.addresses WHERE user_id = %s LIMIT 1", (uid,)
             )
             is_default = cur.fetchone() is None  # first address is the default
 
         cur.execute(
             """
-            INSERT INTO auth.addresses (address_id, user_id, label, street, city, state, zip, is_default)
+            INSERT INTO app_auth.addresses (address_id, user_id, label, street, city, state, zip, is_default)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             RETURNING *
             """,
@@ -186,7 +186,7 @@ def update_address(address_id: str):
     with db.cursor(commit=True) as cur:
         if body.get("isDefault") is True:
             cur.execute(
-                "UPDATE auth.addresses SET is_default = false WHERE user_id = %s", (uid,)
+                "UPDATE app_auth.addresses SET is_default = false WHERE user_id = %s", (uid,)
             )
             sets.append("is_default = %s")
             params.append(True)
@@ -197,7 +197,7 @@ def update_address(address_id: str):
         # user_id in the WHERE is the ownership check.
         params.extend([address_id, uid])
         cur.execute(
-            f"UPDATE auth.addresses SET {', '.join(sets)} "
+            f"UPDATE app_auth.addresses SET {', '.join(sets)} "
             f"WHERE address_id = %s AND user_id = %s RETURNING *",
             tuple(params),
         )
@@ -211,7 +211,7 @@ def update_address(address_id: str):
 @auth.require_auth
 def delete_address(address_id: str):
     row = db.execute(
-        "DELETE FROM auth.addresses WHERE address_id = %s AND user_id = %s RETURNING address_id",
+        "DELETE FROM app_auth.addresses WHERE address_id = %s AND user_id = %s RETURNING address_id",
         (address_id, auth.current_user_id()),
     )
     if not row:
@@ -223,7 +223,7 @@ def delete_address(address_id: str):
 @auth.require_auth
 def get_user(user_id: str):
     """Public-ish profile. Used by other services to attribute reviews."""
-    row = db.query_one("SELECT * FROM auth.users WHERE user_id = %s", (user_id,))
+    row = db.query_one("SELECT * FROM app_auth.users WHERE user_id = %s", (user_id,))
     if not row:
         raise ApiError("User not found", 404)
     return jsonify(
@@ -248,7 +248,7 @@ def set_role(user_id: str):
         raise ApiError("role must be customer, vendor, or admin", 400)
 
     row = db.execute(
-        "UPDATE auth.users SET role = %s WHERE user_id = %s RETURNING *",
+        "UPDATE app_auth.users SET role = %s WHERE user_id = %s RETURNING *",
         (body["role"], user_id),
     )
     if not row:
@@ -260,7 +260,7 @@ def set_role(user_id: str):
 @auth.require_auth
 @auth.require_role("admin")
 def list_users():
-    rows = db.query("SELECT * FROM auth.users ORDER BY created_at DESC")
+    rows = db.query("SELECT * FROM app_auth.users ORDER BY created_at DESC")
     return jsonify([serialize.user_json(r, []) for r in rows])
 
 
@@ -271,7 +271,7 @@ def internal_stats():
         """
         SELECT COUNT(*) AS user_count,
                COALESCE(AVG(sustainability_score), 100) AS avg_sustainability
-        FROM auth.users
+        FROM app_auth.users
         """
     )
     return jsonify(

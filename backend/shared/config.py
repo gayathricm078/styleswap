@@ -17,6 +17,16 @@ def _require(name: str) -> str:
     return val
 
 
+# A full connection string wins when set — this is how you point the whole app
+# at a managed database like Supabase. Everything else (PG_HOST/USER/...) is the
+# local-Postgres path. With a URL there is no separate superuser: the app
+# connects as the single role the provider gives you.
+DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
+
+# Supabase (and most managed Postgres) require TLS. "require" for a URL by
+# default; local Postgres uses "prefer" so a dev box without TLS still works.
+PG_SSLMODE = os.getenv("PG_SSLMODE", "require" if DATABASE_URL else "prefer").strip()
+
 PG_HOST = os.getenv("PG_HOST", "localhost")
 PG_PORT = int(os.getenv("PG_PORT", "5432"))
 PG_DB = os.getenv("PG_DB", "styleswap")
@@ -25,6 +35,10 @@ PG_PASSWORD = os.getenv("PG_PASSWORD", "styleswap_dev_pw")
 
 PG_SUPERUSER = os.getenv("PG_SUPERUSER", "postgres")
 PG_SUPERPASSWORD = os.getenv("PG_SUPERPASSWORD", "")
+
+# True when pointed at a managed database via DATABASE_URL. Scripts use this to
+# skip role/database creation (managed providers own those).
+MANAGED_DB = bool(DATABASE_URL)
 
 JWT_SECRET = os.getenv("JWT_SECRET", "dev-only-change-me")
 JWT_ALGORITHM = "HS256"
@@ -80,11 +94,19 @@ def service_url(name: str) -> str:
 
 
 def dsn(superuser: bool = False, dbname: str | None = None) -> str:
-    if superuser:
-        pw = PG_SUPERPASSWORD
-        user = PG_SUPERUSER
-    else:
-        pw = PG_PASSWORD
-        user = PG_USER
+    """Build a libpq connection string.
+
+    With DATABASE_URL set, everything routes through it (managed DB); the
+    superuser/dbname arguments are ignored because a managed provider gives you
+    one role and one database. Otherwise the local component-based path is used.
+    """
+    if DATABASE_URL:
+        url = DATABASE_URL
+        if "sslmode=" not in url:
+            url += ("&" if "?" in url else "?") + f"sslmode={PG_SSLMODE}"
+        return url
+
+    user = PG_SUPERUSER if superuser else PG_USER
+    pw = PG_SUPERPASSWORD if superuser else PG_PASSWORD
     db = dbname if dbname is not None else PG_DB
-    return f"host={PG_HOST} port={PG_PORT} dbname={db} user={user} password={pw}"
+    return f"host={PG_HOST} port={PG_PORT} dbname={db} user={user} password={pw} sslmode={PG_SSLMODE}"

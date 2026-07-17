@@ -29,8 +29,8 @@ TABLES_IN_WIPE_ORDER = [
     "catalog.reviews",
     "catalog.products",
     "coupons.coupons",
-    "auth.addresses",
-    "auth.users",
+    "app_auth.addresses",
+    "app_auth.users",
 ]
 
 
@@ -45,7 +45,7 @@ def seed_users(conn) -> int:
     for u in seed_data.USERS:
         cur = conn.execute(
             """
-            INSERT INTO auth.users (user_id, email, password_hash, name, phone, role,
+            INSERT INTO app_auth.users (user_id, email, password_hash, name, phone, role,
                                     profile_pic, sustainability_score, reward_points, tier)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (user_id) DO NOTHING
@@ -72,7 +72,7 @@ def seed_addresses(conn) -> int:
     for a in seed_data.ADDRESSES:
         cur = conn.execute(
             """
-            INSERT INTO auth.addresses (address_id, user_id, label, street, city, state, zip, is_default)
+            INSERT INTO app_auth.addresses (address_id, user_id, label, street, city, state, zip, is_default)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (address_id) DO NOTHING
             """,
