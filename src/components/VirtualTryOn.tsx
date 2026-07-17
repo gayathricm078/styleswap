@@ -457,12 +457,16 @@ export default function VirtualTryOn({ products, onViewChange }: VirtualTryOnPro
                         the product photo and must be named as such. Calling it
                         an "AI Synthesis Result" regardless is what the old
                         version did, and it was false. */}
+                    {/* Both frames are a fixed 3:4 portrait box with object-contain
+                        on a neutral fill, so ANY aspect ratio — the tall 768x1024
+                        try-on output, a square selfie, a wide snapshot — is shown
+                        whole. object-cover was cropping the head off the result. */}
                     <div className="space-y-3">
                       <p className="text-[10px] font-sans uppercase tracking-widest font-bold text-[#6B6B6B] text-center">
                         {isComposited ? "Your photo" : "Selected model"}
                       </p>
-                      <div className="w-full h-80 rounded-t-[100px] rounded-b-[20px] overflow-hidden border border-[#DADADA] bg-slate-100">
-                        <img src={activeAvatarUrl} alt="the person being dressed" className="w-full h-full object-cover" />
+                      <div className="w-full aspect-[3/4] rounded-[24px] overflow-hidden border border-[#DADADA] bg-[#F0EDE7] flex items-center justify-center">
+                        <img src={activeAvatarUrl} alt="the person being dressed" className="max-w-full max-h-full object-contain" />
                       </div>
                     </div>
 
@@ -473,11 +477,11 @@ export default function VirtualTryOn({ products, onViewChange }: VirtualTryOnPro
                         </p>
                         {isComposited && <Sparkle className="w-3.5 h-3.5 text-[#D4AF37]" />}
                       </div>
-                      <div className={`w-full h-80 rounded-t-[100px] rounded-b-[20px] overflow-hidden bg-slate-100 relative ${isComposited ? "border-2 border-[#D4AF37] shadow-lg" : "border border-[#DADADA]"}`}>
+                      <div className={`w-full aspect-[3/4] rounded-[24px] overflow-hidden bg-[#F0EDE7] relative flex items-center justify-center ${isComposited ? "border-2 border-[#D4AF37] shadow-lg" : "border border-[#DADADA]"}`}>
                         <img
                           src={compositeResult}
                           alt={isComposited ? "you wearing the garment, generated" : "the garment's product photo"}
-                          className="w-full h-full object-cover"
+                          className="max-w-full max-h-full object-contain"
                         />
                         {isComposited && (
                           <span className="absolute bottom-4 left-4 bg-black/80 backdrop-blur-sm text-white px-3 py-1 rounded text-[9px] font-mono uppercase tracking-widest font-bold">
