@@ -1,236 +1,83 @@
-import React, { useState } from "react";
-import { ShieldCheck, BarChart3, Users, Settings, Activity, ClipboardList, Sparkles, Check, ToggleLeft, ToggleRight } from "lucide-react";
-import { Product } from "../types";
+import React, { useEffect, useState } from "react";
+import { ShieldCheck } from "lucide-react";
+import { Order, Product } from "../types";
+import { api } from "../api/client";
+import AdminAnalytics, { Analytics } from "./AdminAnalytics";
+import AdminCoupons from "./AdminCoupons";
+import AdminOrders from "./AdminOrders";
+import AdminProducts from "./AdminProducts";
+import AdminUserManagement from "./AdminUserManagement";
 
 interface AdminDashboardProps {
   products: Product[];
   ordersCount: number;
+  currentUserId: string;
+  orders: Order[];
+  onRefresh: () => void | Promise<void>;
 }
 
-export default function AdminDashboard({ products, ordersCount }: AdminDashboardProps) {
-  // System control configs
-  const [platformFee, setPlatformFee] = useState(15);
-  const [enableTryOn, setEnableTryOn] = useState(true);
-  const [enableAiStylist, setEnableAiStylist] = useState(true);
-  const [securityPct, setSecurityPct] = useState(25);
-  const [successMsg, setSuccessMsg] = useState<string | null>(null);
+export default function AdminDashboard({
+  products,
+  ordersCount,
+  currentUserId,
+  orders,
+  onRefresh,
+}: AdminDashboardProps) {
+  const [stats, setStats] = useState<Analytics | null>(null);
+  const [statsError, setStatsError] = useState<string | null>(null);
 
-  const handleSaveSettings = () => {
-    setSuccessMsg("Global platform parameters updated successfully!");
-    setTimeout(() => setSuccessMsg(null), 3500);
+  const loadStats = () =>
+    api
+      .getAnalytics()
+      .then(setStats)
+      .catch((err) => setStatsError(err?.message || "Could not load analytics."));
+
+  useEffect(() => {
+    loadStats();
+  }, []);
+
+  /** After a write, pull both the parent's data and the KPI aggregates —
+   *  deleting a listing or moving an order changes the figures above. */
+  const refreshAll = async () => {
+    await onRefresh();
+    await loadStats();
   };
 
-  // Mock audits
-  const systemAudits = [
-    { id: 1, type: "User", msg: "Helena registered as swapper", date: "Just now" },
-    { id: 2, type: "AI", msg: "Gemini 3.5 completed size drape analysis for user Alistair", date: "5 mins ago" },
-    { id: 3, type: "Audit", msg: "Ozone sterilizer logs verified for Ritz Wedding Gown", date: "12 mins ago" },
-    { id: 4, type: "Vendor", msg: "Aura Archives listed new Saint Laurent Blazer", date: "25 mins ago" },
-    { id: 5, type: "System", msg: "Refund processing completed for deposit transaction #2901", date: "1 hour ago" },
-  ];
-
   return (
-    <div className="bg-[#F8F6F2] min-h-screen py-10 px-6 animate-fadeIn">
+    <div className="bg-[#F8F6F2] min-h-screen py-6 sm:py-10 px-4 sm:px-6 animate-fadeIn">
       <div className="max-w-7xl mx-auto text-left">
-        
+
         {/* Title */}
-        <div className="mb-10 border-b border-[#DADADA] pb-6 flex justify-between items-baseline flex-wrap gap-4">
+        <div className="mb-6 sm:mb-8 border-b border-[#DADADA] pb-5 flex justify-between items-baseline flex-wrap gap-3">
           <div>
-            <div className="flex items-center gap-2 text-xs uppercase tracking-widest text-[#6B6B6B] font-sans">
+            <div className="flex items-center gap-2 text-[10px] sm:text-xs uppercase tracking-widest text-[#6B6B6B] font-sans">
               <span>Platform Core Control</span>
-              <span>✦</span>
+              <span className="text-[#D4AF37]">✦</span>
               <span>Super Administrator Portal</span>
             </div>
-            <h2 className="font-serif text-3xl lg:text-4xl text-[#1C1C1C] tracking-tight mt-1 flex items-center gap-2">
-              <ShieldCheck className="w-8 h-8 text-[#1C1C1C]" /> StyleSwap Admin Engine
+            <h2 className="font-serif text-2xl sm:text-3xl lg:text-4xl text-[#1C1C1C] tracking-tight mt-1 flex items-center gap-2">
+              <ShieldCheck className="w-6 h-6 sm:w-8 sm:h-8 text-[#1C1C1C] shrink-0" />
+              StyleSwap Admin Engine
             </h2>
           </div>
-          <div className="bg-[#1C1C1C] text-[#D4AF37] px-4 py-2 rounded-full text-xs font-sans font-bold">
-            🔒 Core System Secure
-          </div>
         </div>
 
-        {/* Global KPI Counters */}
-        <div className="grid grid-cols-2 lg:grid-cols-5 gap-6 mb-10 text-xs">
-          <div className="bg-white border border-[#DADADA] rounded-[24px] p-5 shadow-sm space-y-2">
-            <span className="text-[#6B6B6B] uppercase font-sans tracking-wider block">Total Members</span>
-            <p className="text-2xl font-serif font-bold text-[#1C1C1C]">1,260</p>
-            <span className="text-green-600 font-bold">↑ 12% Month-over-Month</span>
-          </div>
+        <AdminAnalytics stats={stats} error={statsError} ordersCount={ordersCount} />
 
-          <div className="bg-white border border-[#DADADA] rounded-[24px] p-5 shadow-sm space-y-2">
-            <span className="text-[#6B6B6B] uppercase font-sans tracking-wider block">Platform Curators</span>
-            <p className="text-2xl font-serif font-bold text-[#1C1C1C]">14 Stores</p>
-            <span className="text-[#6B6B6B]">7 elite tier verified</span>
-          </div>
-
-          <div className="bg-white border border-[#DADADA] rounded-[24px] p-5 shadow-sm space-y-2">
-            <span className="text-[#6B6B6B] uppercase font-sans tracking-wider block">Durable Inventory</span>
-            <p className="text-2xl font-serif font-bold text-[#1C1C1C]">{products.length} Garments</p>
-            <span className="text-[#D4AF37] font-semibold">Total asset value: ₹85k</span>
-          </div>
-
-          <div className="bg-white border border-[#DADADA] rounded-[24px] p-5 shadow-sm space-y-2">
-            <span className="text-[#6B6B6B] uppercase font-sans tracking-wider block">Agreement Volume</span>
-            <p className="text-2xl font-serif font-bold text-[#1C1C1C]">{ordersCount + 42} Swaps</p>
-            <span className="text-green-600 font-bold">0% return delay index</span>
-          </div>
-
-          <div className="bg-white border border-[#DADADA] rounded-[24px] p-5 shadow-sm space-y-2">
-            <span className="text-[#6B6B6B] uppercase font-sans tracking-wider block">Platform Fees</span>
-            <p className="text-2xl font-serif font-bold text-[#1C1C1C]">₹4,860</p>
-            <span className="text-[#6B6B6B]">Average rate: {platformFee}%</span>
-          </div>
+        {/* Coupons and catalog sit side by side on desktop, stack on mobile.
+            They replaced a "Platform Parameters" panel whose fee/deposit inputs
+            and feature toggles were wired to nothing — no settings service
+            exists to store them, so it could only ever pretend to save. */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 mt-6">
+          <AdminCoupons />
+          <AdminProducts products={products} onChanged={refreshAll} />
         </div>
 
-        {/* Splits: Charts & settings */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-10">
-          
-          {/* Left Column: Visual Growth Chart */}
-          <div className="lg:col-span-8 bg-white border border-[#DADADA] rounded-[32px] p-6 space-y-6 shadow-sm">
-            <div className="flex justify-between items-baseline border-b border-[#DADADA] pb-3">
-              <h3 className="text-xs font-sans uppercase tracking-widest font-bold text-[#1C1C1C] flex items-center gap-1.5">
-                <BarChart3 className="w-4 h-4 text-[#D4AF37]" /> Rental Growth & Swap Transactions
-              </h3>
-              <span className="text-[10px] text-[#6B6B6B]">Monthly Aggregate</span>
-            </div>
-
-            {/* Handcrafted Beautiful Minimalist SVG Bar Chart */}
-            <div className="relative w-full h-64 bg-[#FAF9F6] rounded-2xl flex items-end justify-between p-6 pt-10 border border-[#DADADA]/30">
-              {/* Gridlines */}
-              <div className="absolute inset-x-6 top-10 border-b border-[#DADADA]/20 text-[9px] text-[#6B6B6B]/60 text-right">80 Swaps</div>
-              <div className="absolute inset-x-6 top-28 border-b border-[#DADADA]/20 text-[9px] text-[#6B6B6B]/60 text-right">40 Swaps</div>
-              <div className="absolute inset-x-6 top-44 border-b border-[#DADADA]/20 text-[9px] text-[#6B6B6B]/60 text-right">10 Swaps</div>
-
-              {/* Minimal bar groups */}
-              <div className="flex flex-col items-center gap-1.5 z-10">
-                <div className="w-10 bg-[#D3C6B8] rounded-t-lg transition hover:bg-[#303030]" style={{ height: "45px" }}></div>
-                <span className="text-[10px] font-mono text-[#6B6B6B]">Feb</span>
-              </div>
-              <div className="flex flex-col items-center gap-1.5 z-10">
-                <div className="w-10 bg-[#D3C6B8] rounded-t-lg transition hover:bg-[#303030]" style={{ height: "65px" }}></div>
-                <span className="text-[10px] font-mono text-[#6B6B6B]">Mar</span>
-              </div>
-              <div className="flex flex-col items-center gap-1.5 z-10">
-                <div className="w-10 bg-[#D3C6B8] rounded-t-lg transition hover:bg-[#303030]" style={{ height: "90px" }}></div>
-                <span className="text-[10px] font-mono text-[#6B6B6B]">Apr</span>
-              </div>
-              <div className="flex flex-col items-center gap-1.5 z-10">
-                <div className="w-10 bg-[#D3C6B8] rounded-t-lg transition hover:bg-[#303030]" style={{ height: "135px" }}></div>
-                <span className="text-[10px] font-mono text-[#6B6B6B]">May</span>
-              </div>
-              <div className="flex flex-col items-center gap-1.5 z-10">
-                <div className="w-10 bg-[#303030] rounded-t-lg" style={{ height: "170px" }}></div>
-                <span className="text-[10px] font-mono text-[#1C1C1C] font-bold">Jun</span>
-              </div>
-            </div>
-
-            {/* Audit Stream Tracker */}
-            <div className="space-y-4 pt-4 border-t border-[#DADADA]">
-              <h4 className="text-xs font-sans uppercase tracking-widest font-bold text-[#1C1C1C] flex items-center gap-1.5">
-                <Activity className="w-4 h-4 text-[#D4AF37]" /> Active System Logs & Audit Trails
-              </h4>
-
-              <div className="space-y-2.5 font-mono text-[11px] bg-[#FAF9F6] border border-[#DADADA] rounded-2xl p-4 max-h-48 overflow-y-auto">
-                {systemAudits.map((aud) => (
-                  <div key={aud.id} className="flex justify-between items-start gap-4 py-1 border-b border-gray-100 last:border-0">
-                    <span className="text-[#6B6B6B] shrink-0">[{aud.type}]</span>
-                    <span className="text-[#1C1C1C] text-left flex-1 leading-relaxed">{aud.msg}</span>
-                    <span className="text-[#6B6B6B] shrink-0 text-right">{aud.date}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          {/* Right Column: Platform Configuration Settings */}
-          <div className="lg:col-span-4 space-y-6">
-            <div className="bg-white border border-[#DADADA] rounded-[32px] p-6 space-y-5 shadow-sm text-xs">
-              <h3 className="text-xs font-sans uppercase tracking-widest font-bold text-[#1C1C1C] border-b border-[#DADADA] pb-3 flex items-center gap-1.5">
-                <Settings className="w-4 h-4 text-[#D4AF37]" /> Platform Parameters
-              </h3>
-
-              {successMsg && (
-                <div className="bg-green-50 border border-green-200 text-green-800 p-3 rounded-lg flex items-center gap-1">
-                  <Check className="w-4 h-4" /> {successMsg}
-                </div>
-              )}
-
-              {/* Commission input */}
-              <div className="space-y-1.5">
-                <label className="block text-[10px] text-[#6B6B6B] font-bold uppercase">Platform Fee Commission (%)</label>
-                <div className="flex gap-2">
-                  <input
-                    id="admin-fee-input"
-                    type="number"
-                    value={platformFee}
-                    onChange={(e) => setPlatformFee(Number(e.target.value))}
-                    className="w-full bg-[#FAF9F6] border border-[#DADADA] rounded-lg p-2.5 font-mono font-bold"
-                  />
-                  <span className="bg-gray-100 px-3.5 flex items-center rounded-lg border border-[#DADADA] font-bold">%</span>
-                </div>
-              </div>
-
-              {/* Security deposit percentage */}
-              <div className="space-y-1.5">
-                <label className="block text-[10px] text-[#6B6B6B] font-bold uppercase">Default Security Deposit Rate (%)</label>
-                <div className="flex gap-2">
-                  <input
-                    id="admin-deposit-input"
-                    type="number"
-                    value={securityPct}
-                    onChange={(e) => setSecurityPct(Number(e.target.value))}
-                    className="w-full bg-[#FAF9F6] border border-[#DADADA] rounded-lg p-2.5 font-mono font-bold"
-                  />
-                  <span className="bg-gray-100 px-3.5 flex items-center rounded-lg border border-[#DADADA] font-bold">%</span>
-                </div>
-              </div>
-
-              {/* Feature Flags */}
-              <div className="space-y-4 pt-4 border-t border-[#DADADA]">
-                <h4 className="text-[10px] text-[#1C1C1C] font-bold uppercase tracking-wider">Feature Flags Status</h4>
-                
-                <div className="flex justify-between items-center">
-                  <div>
-                    <span className="font-bold text-[#1C1C1C]">Gemini 3.5 AI Stylist</span>
-                    <p className="text-[10px] text-[#6B6B6B]">Enables conversational look generation.</p>
-                  </div>
-                  <button
-                    id="flag-stylist-toggle"
-                    onClick={() => setEnableAiStylist(!enableAiStylist)}
-                    className="text-[#303030] hover:text-black transition"
-                  >
-                    {enableAiStylist ? <ToggleRight className="w-8 h-8" /> : <ToggleLeft className="w-8 h-8 text-gray-300" />}
-                  </button>
-                </div>
-
-                <div className="flex justify-between items-center">
-                  <div>
-                    <span className="font-bold text-[#1C1C1C]">AI Virtual Try-On Studio</span>
-                    <p className="text-[10px] text-[#6B6B6B]">Enables face mesh alignment overlays.</p>
-                  </div>
-                  <button
-                    id="flag-tryon-toggle"
-                    onClick={() => setEnableTryOn(!enableTryOn)}
-                    className="text-[#303030] hover:text-black transition"
-                  >
-                    {enableTryOn ? <ToggleRight className="w-8 h-8" /> : <ToggleLeft className="w-8 h-8 text-gray-300" />}
-                  </button>
-                </div>
-              </div>
-
-              <button
-                id="admin-save-btn"
-                onClick={handleSaveSettings}
-                className="w-full bg-[#303030] hover:bg-black text-white text-[10px] font-sans font-bold uppercase tracking-widest py-3.5 rounded-xl transition"
-              >
-                Apply Parameters
-              </button>
-            </div>
-          </div>
-
+        {/* Tables run full width — they need the room. */}
+        <div className="mt-6 space-y-6">
+          <AdminOrders orders={orders} onChanged={refreshAll} />
+          <AdminUserManagement currentUserId={currentUserId} />
         </div>
-
       </div>
     </div>
   );

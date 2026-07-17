@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { Sparkles, Image as ImageIcon, Download, Share2, ArrowRight, RotateCcw, Sparkle, HelpCircle, Film, RefreshCw } from "lucide-react";
+import { api, ApiError } from "../api/client";
 
 interface GeneratedAsset {
   id: string;
@@ -82,14 +83,7 @@ export default function AiStudio() {
     setError(null);
 
     try {
-      const res = await fetch("/api/generate-image", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt, aspectRatio }),
-      });
-
-      if (!res.ok) throw new Error("Atelier image pipeline returned an error.");
-      const data = await res.json();
+      const data = await api.generateImage(prompt, aspectRatio);
 
       // Dynamically prompt-generate a nice editorial style guidance based on the generated image
       const categoryLabel = category;
@@ -108,13 +102,9 @@ export default function AiStudio() {
 
       setAssets((prev) => [newAsset, ...prev]);
       setActiveAsset(newAsset);
-      
-      if (data.isFallback && data.error === "Credentials missing. Applied studio fallback.") {
-        setError("Note: Live Gemini model is unconfigured. Showing high-fidelity curated fashion design.");
-      }
     } catch (err: any) {
       console.error(err);
-      setError("Atelier service offline. Applied design sandbox visual fallback.");
+      setError(err instanceof ApiError ? err.message : "The image service is unavailable.");
     } finally {
       setIsGenerating(false);
     }

@@ -1,10 +1,11 @@
 import React, { useState } from "react";
 import { motion } from "motion/react";
 import { Sparkles, Mail, Lock, User, Check, ArrowRight, Shield, ShoppingBag, Leaf, Eye, EyeOff } from "lucide-react";
-import { UserRole } from "../types";
+import { UserProfileData, UserRole } from "../types";
+import { api, ApiError, setToken } from "../api/client";
 
 interface WelcomeLoginProps {
-  onLogin: (user: any, role: UserRole) => void;
+  onLogin: (user: UserProfileData) => void;
 }
 
 export default function WelcomeLogin({ onLogin }: WelcomeLoginProps) {
@@ -52,101 +53,41 @@ export default function WelcomeLogin({ onLogin }: WelcomeLoginProps) {
     setError("");
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
-    setLoading(true);
 
     if (!email.trim() || !password.trim()) {
       setError("Please fill out all fields.");
-      setLoading(false);
       return;
     }
-
     if (!isLogin && !name.trim()) {
       setError("Please provide your name.");
-      setLoading(false);
+      return;
+    }
+    if (!isLogin && password.length < 8) {
+      setError("Password must be at least 8 characters.");
       return;
     }
 
-    // Check if it's one of our demo personas for quick validation
-    const foundDemo = demoPersonas.find(p => p.email.toLowerCase() === email.toLowerCase());
+    setLoading(true);
+    try {
+      // The server verifies the password and decides the role; nothing about
+      // identity is determined here.
+      const { token, user } = isLogin
+        ? await api.login(email.trim(), password)
+        : await api.register(name.trim(), email.trim(), password);
 
-    setTimeout(() => {
-      if (isLogin) {
-        if (foundDemo) {
-          onLogin(
-            {
-              id: `user-${foundDemo.role}`,
-              name: foundDemo.name,
-              email: foundDemo.email,
-              profilePic: foundDemo.avatar,
-              role: foundDemo.role,
-              sustainabilityScore: foundDemo.role === "customer" ? 89 : 100,
-              rewardPoints: foundDemo.role === "customer" ? 1250 : 0,
-              tier: foundDemo.role === "customer" ? "Gold" : "Partner",
-              addresses: [
-                {
-                  id: "addr-demo",
-                  label: "Main Residence (Default)",
-                  street: "742 Fifth Avenue, Apt 4B",
-                  city: "New York",
-                  state: "NY",
-                  zip: "10019",
-                  isDefault: true
-                }
-              ]
-            },
-            foundDemo.role
-          );
-        } else {
-          // Custom customer login fallback
-          onLogin(
-            {
-              id: "user-custom",
-              name: email.split("@")[0].replace(/^\w/, c => c.toUpperCase()),
-              email: email,
-              profilePic: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=150",
-              role: "customer" as UserRole,
-              sustainabilityScore: 75,
-              rewardPoints: 100,
-              tier: "Silver",
-              addresses: [
-                {
-                  id: "addr-custom",
-                  label: "Home Address",
-                  street: "123 Style Boulevard",
-                  city: "San Francisco",
-                  state: "CA",
-                  zip: "94103",
-                  isDefault: true
-                }
-              ]
-            },
-            "customer"
-          );
-        }
+      setToken(token);
+      onLogin(user);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 0) {
+        setError("Cannot reach the StyleSwap server. Start it with: cd backend && python run_all.py");
       } else {
-        // Register standard customer
-        onLogin(
-          {
-            id: `user-registered-${Date.now()}`,
-            name: name,
-            email: email,
-            profilePic: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=150",
-            role: "customer" as UserRole,
-            sustainabilityScore: 100, // starting point
-            rewardPoints: 150, // welcome points
-            tier: "Silver",
-            preferredCategory: prefCategory,
-            preferredSize: prefSize,
-            addresses: []
-          },
-          "customer"
-        );
+        setError(err instanceof ApiError ? err.message : "Something went wrong. Please try again.");
       }
       setLoading(false);
-    }, 800);
+    }
   };
 
   return (

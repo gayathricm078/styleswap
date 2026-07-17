@@ -3,6 +3,8 @@ import react from '@vitejs/plugin-react';
 import path from 'path';
 import {defineConfig} from 'vite';
 
+const GATEWAY = process.env.GATEWAY_URL || 'http://127.0.0.1:8000';
+
 export default defineConfig(() => {
   return {
     plugins: [react(), tailwindcss()],
@@ -12,10 +14,15 @@ export default defineConfig(() => {
       },
     },
     server: {
+      port: 5173,
+      // /api and /ai go to the gateway, which fans out to the services.
+      // Keeps the browser on one origin, so relative fetch paths just work.
+      proxy: {
+        '/api': {target: GATEWAY, changeOrigin: true},
+        '/ai': {target: GATEWAY, changeOrigin: true},
+      },
       // HMR is disabled in AI Studio via DISABLE_HMR env var.
-      // Do not modifyâfile watching is disabled to prevent flickering during agent edits.
       hmr: process.env.DISABLE_HMR !== 'true',
-      // Disable file watching when DISABLE_HMR is true to save CPU during agent edits.
       watch: process.env.DISABLE_HMR === 'true' ? null : {},
     },
   };

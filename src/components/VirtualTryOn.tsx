@@ -1,72 +1,212 @@
-import React, { useState } from "react";
-import { Camera, Upload, Sparkles, Image as ImageIcon, Check, Download, Share2, Sparkle } from "lucide-react";
+import React, { useEffect, useRef, useState } from "react";
+import { Camera, Upload, Sparkles, Image as ImageIcon, Check, Download, Share2, Sparkle, X, AlertCircle } from "lucide-react";
 import { Product } from "../types";
+import { api, ApiError } from "../api/client";
 
 interface VirtualTryOnProps {
   products: Product[];
   onViewChange: (view: string) => void;
 }
 
+/** Reject anything that isn't a real image, or is big enough to hang the tab. */
+const MAX_UPLOAD_BYTES = 8 * 1024 * 1024;
+
 export default function VirtualTryOn({ products, onViewChange }: VirtualTryOnProps) {
+  // Only garments carrying a flat product shot can be dressed onto a body.
+  const tryableProducts = products.filter((p) => Boolean(p.tryonImage));
+
   const [selectedAvatar, setSelectedAvatar] = useState<string>("Sofia");
-  const [selectedProduct, setSelectedProduct] = useState<Product | null>(products[1] || null);
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(tryableProducts[0] || null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [compositeResult, setCompositeResult] = useState<string | null>(null);
   const [tryOnReport, setTryOnReport] = useState<{ fitReview: string; toneHarmony: string; styleScore: string } | null>(null);
 
+  // A photo the user uploaded or captured. Held as a data URL in component
+  // state only — it is never uploaded anywhere, which is what "private photo"
+  // in the blurb has to mean for it to be true.
+  const [customPhoto, setCustomPhoto] = useState<string | null>(null);
+  const [mediaError, setMediaError] = useState<string | null>(null);
+
+  // Whether the image on the right is genuinely the person wearing the garment,
+  // or just the product photo. The UI must never claim the former without this.
+  const [isComposited, setIsComposited] = useState(false);
+  const [tryOnNote, setTryOnNote] = useState<string | null>(null);
+
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const [cameraReady, setCameraReady] = useState(false);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Full-body shots, deliberately. The try-on model needs a body to dress —
+  // fed a headshot it smears the garment across the face. These were portraits
+  // before, which both failed and taught users to upload the wrong thing.
+  // Portrait crops forced to 600x800 — the try-on service enforces a 512x512
+  // minimum on both sides, and a landscape crop fails it.
   const avatars = [
-    { name: "Sofia", gender: "Female", url: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=300" },
-    { name: "Helena", gender: "Female", url: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&q=80&w=300" },
-    { name: "Charlotte", gender: "Female", url: "https://images.unsplash.com/photo-1438761681033-6461ffad8d80?auto=format&fit=crop&q=80&w=300" },
-    { name: "Alistair", gender: "Male", url: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&q=80&w=300" }
+    { name: "Sofia", gender: "Female", url: "https://images.unsplash.com/photo-1483985988355-763728e1935b?auto=format&fit=crop&w=600&h=800&q=80" },
+    { name: "Helena", gender: "Female", url: "https://images.unsplash.com/photo-1485231183945-fffde7cc051e?auto=format&fit=crop&w=600&h=800&q=80" },
+    { name: "Charlotte", gender: "Female", url: "https://images.unsplash.com/photo-1496747611176-843222e1e57c?auto=format&fit=crop&w=600&h=800&q=80" },
+    { name: "Alistair", gender: "Male", url: "https://images.unsplash.com/photo-1516257984-b1b4d707412e?auto=format&fit=crop&w=600&h=800&q=80" }
   ];
+
+  const stopCamera = () => {
+    streamRef.current?.getTracks().forEach((t) => t.stop());
+    streamRef.current = null;
+    setCameraReady(false);
+    setCameraOpen(false);
+  };
+
+  // Releasing the camera on unmount is not optional — the OS keeps the webcam
+  // light on until every track is stopped.
+  useEffect(() => {
+    return () => {
+      streamRef.current?.getTracks().forEach((t) => t.stop());
+    };
+  }, []);
+
+  const handleOpenCamera = async () => {
+    setMediaError(null);
+
+    // getUserMedia only exists on a secure origin (https or localhost).
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setMediaError("Your browser blocks camera access on this page. Cameras need HTTPS or localhost.");
+      return;
+    }
+
+    setCameraOpen(true);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "user", width: { ideal: 720 }, height: { ideal: 960 } },
+        audio: false,
+      });
+      streamRef.current = stream;
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play();
+      }
+      setCameraReady(true);
+    } catch (err: any) {
+      // Name the actual reason — "camera failed" tells the user nothing about
+      // whether to click Allow, close Zoom, or plug a camera in.
+      const reason =
+        err?.name === "NotAllowedError"
+          ? "Camera permission was denied. Allow it in your browser's address bar, then try again."
+          : err?.name === "NotFoundError"
+          ? "No camera found on this device."
+          : err?.name === "NotReadableError"
+          ? "Your camera is already in use by another app."
+          : `Could not start the camera: ${err?.message || err?.name || "unknown error"}`;
+      setMediaError(reason);
+      stopCamera();
+    }
+  };
+
+  const handleCapture = () => {
+    const video = videoRef.current;
+    if (!video || !cameraReady) return;
+
+    const canvas = document.createElement("canvas");
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    // The preview is mirrored so it reads like a mirror; flip back on capture
+    // so the saved photo isn't reversed.
+    ctx.translate(canvas.width, 0);
+    ctx.scale(-1, 1);
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    setCustomPhoto(canvas.toDataURL("image/jpeg", 0.9));
+    setSelectedAvatar("Your photo");
+    setCompositeResult(null);
+    stopCamera();
+  };
+
+  const handleFilePicked = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setMediaError(null);
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      setMediaError("That file isn't an image. Pick a JPG, PNG, or WEBP.");
+      return;
+    }
+    if (file.size > MAX_UPLOAD_BYTES) {
+      setMediaError(`That image is ${(file.size / 1024 / 1024).toFixed(1)}MB — keep it under 8MB.`);
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      setCustomPhoto(String(reader.result));
+      setSelectedAvatar("Your photo");
+      setCompositeResult(null);
+    };
+    reader.onerror = () => setMediaError("Could not read that file.");
+    reader.readAsDataURL(file);
+
+    // Reset so picking the same file twice still fires onChange.
+    e.target.value = "";
+  };
+
+  const clearCustomPhoto = () => {
+    setCustomPhoto(null);
+    setSelectedAvatar("Sofia");
+    setCompositeResult(null);
+  };
 
   const handleGenerateTryOn = async () => {
     if (!selectedProduct) return;
     setIsProcessing(true);
     setCompositeResult(null);
     setTryOnReport(null);
+    setIsComposited(false);
+    setTryOnNote(null);
 
-    const activeAvatarObj = avatars.find((a) => a.name === selectedAvatar);
-    const activeAvatarUrl = activeAvatarObj?.url || "";
+    // The person image is the user's own photo when they gave one, otherwise
+    // the selected full-body avatar. Either way the server needs the pixels to
+    // composite — a name is not enough.
+    const personImage = customPhoto || avatars.find((a) => a.name === selectedAvatar)?.url || "";
 
     try {
-      const res = await fetch("/ai/tryon", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          avatarUrl: activeAvatarUrl,
-          productUrl: selectedProduct.image,
-          productName: selectedProduct.name,
-          avatarName: selectedAvatar,
-          productBrand: selectedProduct.brand
-        })
+      const data = await api.tryOn({
+        personImage,
+        tryonImage: selectedProduct.tryonImage,
+        productUrl: selectedProduct.image,
+        productName: selectedProduct.name,
+        avatarName: selectedAvatar,
+        productBrand: selectedProduct.brand,
       });
 
-      if (!res.ok) throw new Error("Try-on fetch failed");
-      const data = await res.json();
-      
       setCompositeResult(data.imageUrl);
+      setIsComposited(data.composited);
+      setTryOnNote(data.error);
       setTryOnReport({
         fitReview: data.fitReview,
         toneHarmony: data.toneHarmony,
-        styleScore: data.styleScore
+        styleScore: data.styleScore,
       });
     } catch (err) {
       console.error(err);
-      // Seamless luxury fallback
+      // Show the garment, but never call it a try-on result.
       setCompositeResult(selectedProduct.image);
+      setIsComposited(false);
+      setTryOnNote(
+        err instanceof ApiError ? err.message : "The fitting room is unavailable right now."
+      );
       setTryOnReport({
-        fitReview: `The ${selectedProduct.name} drapes beautifully on your model silhouette. Sizing fits comfortable and matches standard measurements.`,
-        toneHarmony: "The elegant, clean hues complement your skin tone, producing an elevated aesthetic presence under ambient or direct lighting.",
-        styleScore: "95/100"
+        fitReview: "—",
+        toneHarmony: "—",
+        styleScore: "—",
       });
     } finally {
       setIsProcessing(false);
     }
   };
 
-  const activeAvatarUrl = avatars.find((a) => a.name === selectedAvatar)?.url;
+  const activeAvatarUrl = customPhoto || avatars.find((a) => a.name === selectedAvatar)?.url;
 
   return (
     <div className="bg-[#F8F6F2] min-h-screen py-10 px-6 animate-fadeIn">
@@ -101,7 +241,38 @@ export default function VirtualTryOn({ products, onViewChange }: VirtualTryOnPro
               </h3>
               
               <div className="grid grid-cols-4 gap-3">
-                {avatars.map((av) => (
+                {/* The user's own photo takes the first slot once it exists. */}
+                {customPhoto && (
+                  <div className="relative">
+                    <button
+                      id="tryon-avatar-custom"
+                      onClick={() => {
+                        setSelectedAvatar("Your photo");
+                        setCompositeResult(null);
+                      }}
+                      className={`relative w-full rounded-xl overflow-hidden border-2 transition ${
+                        selectedAvatar === "Your photo"
+                          ? "border-[#D4AF37] scale-105"
+                          : "border-transparent opacity-70 hover:opacity-100"
+                      }`}
+                    >
+                      <img src={customPhoto} alt="Your photo" className="w-full h-12 object-cover" />
+                      <span className="absolute bottom-0 inset-x-0 bg-black/60 text-[8px] text-white py-0.5 text-center truncate">
+                        You
+                      </span>
+                    </button>
+                    <button
+                      id="tryon-clear-custom"
+                      onClick={clearCustomPhoto}
+                      title="Remove your photo"
+                      className="absolute -top-1.5 -right-1.5 bg-[#1C1C1C] text-white rounded-full p-0.5 hover:bg-black transition"
+                    >
+                      <X className="w-2.5 h-2.5" />
+                    </button>
+                  </div>
+                )}
+
+                {avatars.slice(0, customPhoto ? 3 : 4).map((av) => (
                   <button
                     key={av.name}
                     id={`tryon-avatar-${av.name}`}
@@ -117,24 +288,96 @@ export default function VirtualTryOn({ products, onViewChange }: VirtualTryOnPro
                 ))}
               </div>
 
-              {/* Upload & Camera Buttons */}
+              {mediaError && (
+                <div className="flex items-start gap-2 bg-[#FAF9F6] border border-red-200 rounded-xl px-3 py-2.5 text-[10px] text-[#6B6B6B] leading-relaxed">
+                  <AlertCircle className="w-3.5 h-3.5 text-red-500 shrink-0 mt-px" />
+                  {mediaError}
+                </div>
+              )}
+
+              {/* Upload & Camera */}
               <div className="grid grid-cols-2 gap-3 pt-2">
+                {/* The real file picker. Hidden, driven by the styled button. */}
+                <input
+                  ref={fileInputRef}
+                  id="tryon-file-input"
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  onChange={handleFilePicked}
+                  className="hidden"
+                />
                 <button
                   id="tryon-upload-btn"
-                  onClick={() => alert("Photo selector simulation triggered. Supported formats: JPG, PNG.")}
+                  onClick={() => fileInputRef.current?.click()}
                   className="flex items-center justify-center gap-1.5 py-2.5 border border-[#DADADA] rounded-xl text-[10px] font-sans font-bold uppercase tracking-wider text-[#1C1C1C] bg-[#FAF9F6] hover:border-black transition"
                 >
                   <Upload className="w-3.5 h-3.5" /> Upload Photo
                 </button>
                 <button
                   id="tryon-camera-btn"
-                  onClick={() => alert("Webcam permissions initialized. Place your face centered inside the frame.")}
+                  onClick={handleOpenCamera}
                   className="flex items-center justify-center gap-1.5 py-2.5 border border-[#DADADA] rounded-xl text-[10px] font-sans font-bold uppercase tracking-wider text-[#1C1C1C] bg-[#FAF9F6] hover:border-black transition"
                 >
                   <Camera className="w-3.5 h-3.5" /> Capture Live
                 </button>
               </div>
+
+              <p className="text-[9px] text-[#6B6B6B] leading-relaxed">
+                For the best result, use a <strong className="text-[#1C1C1C]">full-body</strong> photo
+                facing forward — the AI dresses the body it can see.
+              </p>
             </div>
+
+            {/* Camera modal */}
+            {cameraOpen && (
+              <div
+                className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4"
+                role="dialog"
+                aria-modal="true"
+                aria-label="Capture a photo"
+              >
+                <div className="bg-white rounded-[24px] p-5 max-w-md w-full space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs font-sans uppercase tracking-widest font-bold text-[#1C1C1C]">
+                      Capture live
+                    </h4>
+                    <button
+                      id="tryon-camera-close"
+                      onClick={stopCamera}
+                      className="text-[#6B6B6B] hover:text-[#1C1C1C] transition"
+                      aria-label="Close camera"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  <div className="relative bg-[#1C1C1C] rounded-2xl overflow-hidden aspect-[3/4]">
+                    <video
+                      ref={videoRef}
+                      playsInline
+                      muted
+                      // Mirrored so it behaves like a mirror; the capture flips
+                      // it back so the stored photo isn't reversed.
+                      className="w-full h-full object-cover -scale-x-100"
+                    />
+                    {!cameraReady && (
+                      <div className="absolute inset-0 flex items-center justify-center text-[11px] text-white/70">
+                        Waiting for camera permission…
+                      </div>
+                    )}
+                  </div>
+
+                  <button
+                    id="tryon-capture-btn"
+                    onClick={handleCapture}
+                    disabled={!cameraReady}
+                    className="w-full bg-[#303030] text-white text-[10px] font-sans font-bold uppercase tracking-widest py-3 rounded-full hover:bg-black transition disabled:opacity-40 flex items-center justify-center gap-1.5"
+                  >
+                    <Camera className="w-3.5 h-3.5" /> {cameraReady ? "Capture photo" : "Starting camera…"}
+                  </button>
+                </div>
+              </div>
+            )}
 
             {/* Step 2: Choose Garment */}
             <div className="bg-white border border-[#DADADA] rounded-[24px] p-6 space-y-4 shadow-sm">
@@ -143,14 +386,18 @@ export default function VirtualTryOn({ products, onViewChange }: VirtualTryOnPro
                 Choose Style Swap Garment
               </h3>
 
+              {/* Only garments with a flat product shot can be tried on. A vase
+                  or a handbag has nothing to dress a body in, and offering them
+                  would just produce nonsense. */}
               <div className="grid grid-cols-2 gap-3 max-h-72 overflow-y-auto pr-1">
-                {products.slice(0, 8).map((prod) => (
+                {tryableProducts.map((prod) => (
                   <button
                     key={prod.id}
                     id={`tryon-garment-${prod.id}`}
                     onClick={() => {
                       setSelectedProduct(prod);
                       setCompositeResult(null);
+                      setTryOnNote(null);
                     }}
                     className={`border rounded-xl p-2.5 flex items-center gap-3 transition text-left ${selectedProduct?.id === prod.id ? "border-[#D4AF37] bg-[#D4AF37]/5" : "border-[#DADADA] bg-white hover:border-[#1C1C1C]"}`}
                   >
@@ -164,6 +411,12 @@ export default function VirtualTryOn({ products, onViewChange }: VirtualTryOnPro
                   </button>
                 ))}
               </div>
+
+              {tryableProducts.length === 0 && (
+                <p className="text-[10px] text-[#6B6B6B] text-center py-4">
+                  No garments in the archive have a flat product photo yet, so none can be tried on.
+                </p>
+              )}
             </div>
 
             {/* Step 3: Action */}
@@ -199,39 +452,74 @@ export default function VirtualTryOn({ products, onViewChange }: VirtualTryOnPro
                 <div className="bg-white border border-[#DADADA] rounded-[32px] p-6 shadow-sm">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-center">
                     
-                    {/* Before/After Comparative View */}
+                    {/* Before / after. The right-hand label is driven by
+                        isComposited: when the model didn't run, this is just
+                        the product photo and must be named as such. Calling it
+                        an "AI Synthesis Result" regardless is what the old
+                        version did, and it was false. */}
+                    {/* Both frames are a fixed 3:4 portrait box with object-contain
+                        on a neutral fill, so ANY aspect ratio — the tall 768x1024
+                        try-on output, a square selfie, a wide snapshot — is shown
+                        whole. object-cover was cropping the head off the result. */}
                     <div className="space-y-3">
-                      <p className="text-[10px] font-sans uppercase tracking-widest font-bold text-[#6B6B6B] text-center">Original Face Input</p>
-                      <div className="w-full h-80 rounded-t-[100px] rounded-b-[20px] overflow-hidden border border-[#DADADA] bg-slate-100">
-                        <img src={activeAvatarUrl} alt="source face" className="w-full h-full object-cover" />
+                      <p className="text-[10px] font-sans uppercase tracking-widest font-bold text-[#6B6B6B] text-center">
+                        {isComposited ? "Your photo" : "Selected model"}
+                      </p>
+                      <div className="w-full aspect-[3/4] rounded-[24px] overflow-hidden border border-[#DADADA] bg-[#F0EDE7] flex items-center justify-center">
+                        <img src={activeAvatarUrl} alt="the person being dressed" className="max-w-full max-h-full object-contain" />
                       </div>
                     </div>
 
                     <div className="space-y-3">
                       <div className="flex justify-center items-center gap-1.5">
-                        <p className="text-[10px] font-sans uppercase tracking-widest font-bold text-[#D4AF37] text-center">AI Synthesis Result</p>
-                        <Sparkle className="w-3.5 h-3.5 text-[#D4AF37]" />
+                        <p className={`text-[10px] font-sans uppercase tracking-widest font-bold text-center ${isComposited ? "text-[#D4AF37]" : "text-[#6B6B6B]"}`}>
+                          {isComposited ? "AI try-on result" : "Garment photo — not a try-on"}
+                        </p>
+                        {isComposited && <Sparkle className="w-3.5 h-3.5 text-[#D4AF37]" />}
                       </div>
-                      <div className="w-full h-80 rounded-t-[100px] rounded-b-[20px] overflow-hidden border-2 border-[#D4AF37] bg-slate-100 relative shadow-lg">
-                        <img src={compositeResult} alt="composite look" className="w-full h-full object-cover" />
-                        <span className="absolute bottom-4 left-4 bg-black/80 backdrop-blur-sm text-white px-3 py-1 rounded text-[9px] font-mono uppercase tracking-widest font-bold">
-                          ✦ Try-on complete
-                        </span>
+                      <div className={`w-full aspect-[3/4] rounded-[24px] overflow-hidden bg-[#F0EDE7] relative flex items-center justify-center ${isComposited ? "border-2 border-[#D4AF37] shadow-lg" : "border border-[#DADADA]"}`}>
+                        <img
+                          src={compositeResult}
+                          alt={isComposited ? "you wearing the garment, generated" : "the garment's product photo"}
+                          className="max-w-full max-h-full object-contain"
+                        />
+                        {isComposited && (
+                          <span className="absolute bottom-4 left-4 bg-black/80 backdrop-blur-sm text-white px-3 py-1 rounded text-[9px] font-mono uppercase tracking-widest font-bold">
+                            ✦ AI generated
+                          </span>
+                        )}
                       </div>
+                      {isComposited && (
+                        <p className="text-[9px] text-[#6B6B6B] text-center leading-relaxed">
+                          An AI approximation — fabric, fit, and colour will differ from the real garment.
+                        </p>
+                      )}
                     </div>
 
                   </div>
 
+                  {tryOnNote && (
+                    <div className="mt-5 flex items-start gap-2 bg-[#FAF9F6] border border-[#DADADA] rounded-2xl px-4 py-3 text-[10px] text-[#6B6B6B] leading-relaxed">
+                      <AlertCircle className="w-3.5 h-3.5 text-[#D4AF37] shrink-0 mt-px" />
+                      {tryOnNote}
+                    </div>
+                  )}
+
                   {/* AI Styling & Drape Feedback Report */}
                   {tryOnReport && (
                     <div className="mt-8 pt-6 border-t border-[#DADADA] grid grid-cols-1 md:grid-cols-3 gap-6 text-left animate-slideDown">
+                      {/* "Fit index" implied this was measured against the
+                          customer's body. It isn't — the language model only
+                          ever sees the garment's name and brand, never the
+                          photo. It is an opinion of the piece, so name it one. */}
                       <div className="bg-[#FAF9F6] p-4 rounded-2xl border border-[#DADADA]/50 space-y-1">
-                        <span className="text-[9px] uppercase tracking-wider font-bold text-[#D4AF37]">Haute Fitting Score</span>
-                        <div className="text-2xl font-serif font-bold text-[#1C1C1C] flex items-center gap-1">
+                        <span className="text-[9px] uppercase tracking-wider font-bold text-[#D4AF37]">Style Score</span>
+                        <div className="text-2xl font-serif font-bold text-[#1C1C1C]">
                           <span>{tryOnReport.styleScore}</span>
-                          <span className="text-xs text-[#6B6B6B] font-sans font-normal">fit index</span>
                         </div>
-                        <p className="text-[10px] text-[#6B6B6B]">Highly recommended tailored drape symmetry.</p>
+                        <p className="text-[10px] text-[#6B6B6B]">
+                          The stylist's view of the piece — not a measurement of your fit.
+                        </p>
                       </div>
                       <div className="bg-[#FAF9F6] p-4 rounded-2xl border border-[#DADADA]/50 space-y-1 col-span-2">
                         <span className="text-[9px] uppercase tracking-wider font-bold text-[#1C1C1C]">Atelier Silhouette Review</span>

@@ -1,7 +1,8 @@
-import React, { useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import { Search, Heart, Star, SlidersHorizontal, ArrowUpDown, Check, X, RotateCcw } from "lucide-react";
 import { Product } from "../types";
 import { CATEGORIES } from "../data";
+import { api } from "../api/client";
 
 interface BrowseProductsProps {
   products: Product[];
@@ -19,6 +20,15 @@ export default function BrowseProducts({
   initialSearchQuery,
 }: BrowseProductsProps) {
   const [searchQuery, setSearchQuery] = useState(initialSearchQuery);
+
+  // useState only reads the prop on mount. Without this, searching from the
+  // navbar while already on this page changed the prop but not the state, so
+  // the search silently did nothing — it only worked when arriving from Home,
+  // which remounts the component.
+  useEffect(() => {
+    setSearchQuery(initialSearchQuery);
+  }, [initialSearchQuery]);
+
   const [selectedCategory, setSelectedCategory] = useState<string>("");
   const [selectedBrand, setSelectedBrand] = useState<string>("");
   const [selectedOccasion, setSelectedOccasion] = useState<string>("");
@@ -42,25 +52,24 @@ export default function BrowseProducts({
     setAiSearchResults(null);
 
     try {
-      const res = await fetch("/ai/search", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: aiQuery, products })
-      });
-      if (!res.ok) throw new Error("AI search failed");
-      const data = await res.json();
-      setAiSearchResults(data);
+      setAiSearchResults(await api.aiSearch(aiQuery));
     } catch (err) {
       console.error(err);
-      // Seamless luxury fallback
-      const matches = products.map((prod) => {
-        const contains = prod.name.toLowerCase().includes(aiQuery.toLowerCase()) || prod.description.toLowerCase().includes(aiQuery.toLowerCase());
-        return contains ? {
+      // Semantic search needs the model; when it's unavailable fall back to a
+      // plain substring match so the search box still does something useful.
+      const needle = aiQuery.toLowerCase();
+      const matches = products
+        .filter(
+          (prod) =>
+            prod.name.toLowerCase().includes(needle) ||
+            prod.brand.toLowerCase().includes(needle) ||
+            prod.description.toLowerCase().includes(needle)
+        )
+        .map((prod) => ({
           productId: prod.id,
           relevanceScore: 92,
-          relevanceExplanation: `Matched label keyword "${aiQuery}" inside clothing details.`
-        } : null;
-      }).filter(Boolean) as any[];
+          relevanceExplanation: `Keyword match for "${aiQuery}" (AI ranking unavailable).`,
+        }));
       setAiSearchResults(matches);
     } finally {
       setIsAiSearching(false);
