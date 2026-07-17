@@ -4,7 +4,7 @@
 --
 -- Idempotent: safe to re-run.
 
-CREATE SCHEMA IF NOT EXISTS auth;
+CREATE SCHEMA IF NOT EXISTS app_auth;
 CREATE SCHEMA IF NOT EXISTS catalog;
 CREATE SCHEMA IF NOT EXISTS cart;
 CREATE SCHEMA IF NOT EXISTS wishlist;
@@ -15,7 +15,7 @@ CREATE SCHEMA IF NOT EXISTS notifications;
 -- ---------------------------------------------------------------
 -- auth-service
 -- ---------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS auth.users (
+CREATE TABLE IF NOT EXISTS app_auth.users (
     user_id             TEXT PRIMARY KEY,
     email               TEXT NOT NULL UNIQUE,
     password_hash       TEXT NOT NULL,
@@ -32,11 +32,11 @@ CREATE TABLE IF NOT EXISTS auth.users (
 
 -- Case-insensitive login lookups.
 CREATE UNIQUE INDEX IF NOT EXISTS users_email_lower_idx
-    ON auth.users (lower(email));
+    ON app_auth.users (lower(email));
 
-CREATE TABLE IF NOT EXISTS auth.addresses (
+CREATE TABLE IF NOT EXISTS app_auth.addresses (
     address_id  TEXT PRIMARY KEY,
-    user_id     TEXT NOT NULL REFERENCES auth.users(user_id) ON DELETE CASCADE,
+    user_id     TEXT NOT NULL REFERENCES app_auth.users(user_id) ON DELETE CASCADE,
     label       TEXT NOT NULL,
     street      TEXT NOT NULL,
     city        TEXT NOT NULL,
@@ -45,11 +45,11 @@ CREATE TABLE IF NOT EXISTS auth.addresses (
     is_default  BOOLEAN NOT NULL DEFAULT false
 );
 
-CREATE INDEX IF NOT EXISTS addresses_user_idx ON auth.addresses (user_id);
+CREATE INDEX IF NOT EXISTS addresses_user_idx ON app_auth.addresses (user_id);
 
 -- At most one default address per user.
 CREATE UNIQUE INDEX IF NOT EXISTS addresses_one_default_idx
-    ON auth.addresses (user_id) WHERE is_default;
+    ON app_auth.addresses (user_id) WHERE is_default;
 
 -- ---------------------------------------------------------------
 -- catalog-service
@@ -92,9 +92,9 @@ CREATE INDEX IF NOT EXISTS products_category_idx ON catalog.products (category);
 CREATE INDEX IF NOT EXISTS products_vendor_idx   ON catalog.products (vendor_user_id);
 CREATE INDEX IF NOT EXISTS products_status_idx   ON catalog.products (status);
 
--- Backs the substring search the old backend got wrong.
-CREATE INDEX IF NOT EXISTS products_name_trgm_idx
-    ON catalog.products USING gin (lower(name) gin_trgm_ops);
+-- (The pg_trgm GIN index on lower(name) is created separately by create_db.py,
+--  so a missing/unprivileged pg_trgm never aborts the core schema. Search works
+--  without it — just without trigram acceleration.)
 
 CREATE TABLE IF NOT EXISTS catalog.reviews (
     review_id   TEXT PRIMARY KEY,
@@ -153,7 +153,7 @@ CREATE INDEX IF NOT EXISTS wishlist_user_idx ON wishlist.wishlist_items (user_id
 -- ---------------------------------------------------------------
 -- order-service
 -- ---------------------------------------------------------------
--- delivery_address is a JSONB snapshot, not an FK into auth.addresses: an
+-- delivery_address is a JSONB snapshot, not an FK into app_auth.addresses: an
 -- order must keep the address it actually shipped to even if the user later
 -- edits or deletes that address.
 CREATE TABLE IF NOT EXISTS orders.orders (
